@@ -37,12 +37,12 @@ def main() -> None:
     n_steps = int(duration / dt)
 
     rocket = Rocket(initial, params)
-    trajectory = [State(*initial.__dict__.values())]
+    trajectory = [State.from_array(initial.to_array())]
 
     for _ in range(n_steps):
         cmd = pid.update(rocket.state, target_altitude=100.0, target_theta=0.0, dt=dt)
         rocket.step(dt, thrust=cmd.thrust, gimbal=cmd.gimbal)
-        trajectory.append(State(*vars(rocket.state).values()))
+        trajectory.append(State.from_array(rocket.state.to_array()))
 
     final = trajectory[-1]
     print(f"Simulated {len(trajectory)} frames ({duration:.0f} s)")

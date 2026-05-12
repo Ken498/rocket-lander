@@ -6,10 +6,12 @@ just verify the State <-> array round-trip and that the stub doesn't
 crash.
 """
 
+import math
+
 import numpy as np
 import pytest
 
-from physics import Rocket, RocketParams, State, simulate_freefall
+from physics import PIDController, PIDGains, Rocket, RocketParams, State, simulate_freefall
 
 
 def test_state_roundtrip():
@@ -88,3 +90,24 @@ def test_no_thrust_no_mass_change():
     traj = simulate_freefall(initial, duration=2.0, dt=0.01)
     for s in traj:
         assert s.m == 1000.0
+
+
+def test_landing_is_soft():
+    """PID + gravity feedforward should land from 200 m with |vy| < 2 m/s."""
+    g = 9.81
+    params = RocketParams(dry_mass=0.0, isp=300.0)
+    altitude_pid = PIDController(PIDGains(kp=200, ki=0, kd=1000), output_limits=(-30000, 30000))
+    attitude_pid = PIDController(PIDGains(kp=5000, ki=0, kd=500), output_limits=(-0.3, 0.3))
+    rocket = Rocket(State(x=0, y=200, vx=0, vy=0, theta=0, omega=0, m=1000.0), params)
+
+    dt = 1.0 / 60.0
+    for _ in range(int(40.0 / dt)):
+        s = rocket.state
+        thrust = min(30000, max(0, altitude_pid.update(-s.y, dt) + s.m * g))
+        gimbal = attitude_pid.update(-s.theta, dt)
+        rocket.step(dt, thrust=thrust, gimbal=gimbal)
+        if rocket.state.y <= 0.0:
+            break
+
+    assert abs(rocket.state.vy) < 2.0
+    assert abs(rocket.state.theta) < math.radians(5)
