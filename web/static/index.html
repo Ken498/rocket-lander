@@ -417,6 +417,16 @@
     }
   }
   </script>
+  <script>
+    window.onerror = (msg, src, line, col, err) => {
+      const el = document.getElementById('loading');
+      if (el) el.innerHTML = '<div style="color:#ff3355;font-family:monospace;padding:20px;font-size:13px">MODULE ERROR<br>' + msg + '<br>' + src + ':' + line + '</div>';
+    };
+    window.addEventListener('unhandledrejection', e => {
+      const el = document.getElementById('loading');
+      if (el) el.innerHTML = '<div style="color:#ff3355;font-family:monospace;padding:20px;font-size:13px">PROMISE ERROR<br>' + e.reason + '</div>';
+    });
+  </script>
   <script type="module" src="main.js"></script>
 </body>
 </html>

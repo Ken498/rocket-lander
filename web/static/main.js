@@ -68,7 +68,7 @@ ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
 scene.add(ground);
 
-scene.add(Object.assign(new THREE.GridHelper(600, 60, 0x1c2535, 0x161e2d), { position: { y: 0.02 } }));
+{ const g = new THREE.GridHelper(600, 60, 0x1c2535, 0x161e2d); g.position.y = 0.02; scene.add(g); }
 
 // Landing pad + markings
 {
@@ -107,6 +107,7 @@ const windowMat = new THREE.MeshPhongMaterial({ color: 0x88ccff, emissive: 0x224
 
 // ── Rocket ────────────────────────────────────────────────────────────────────
 const rocketGroup = new THREE.Group();
+rocketGroup.scale.setScalar(2.5);
 scene.add(rocketGroup);
 
 // Body
