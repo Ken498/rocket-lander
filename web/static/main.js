@@ -20,13 +20,13 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = 1.6;
 document.body.appendChild(renderer.domElement);
 
 // ── Scene ─────────────────────────────────────────────────────────────────────
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0a0f1a);
-scene.fog = new THREE.Fog(0x0a0f1a, 50, 400);
+scene.background = new THREE.Color(0x3d5a7a);
+scene.fog = new THREE.Fog(0xd4a574, 80, 600);
 
 // ── Camera ────────────────────────────────────────────────────────────────────
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 5000);
@@ -38,49 +38,59 @@ const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
 const bloomPass = new UnrealBloomPass(
   new THREE.Vector2(window.innerWidth, window.innerHeight),
-  0.6,    // strength
+  0.25,   // strength — daytime needs less bloom
   0.4,    // radius
-  0.85,   // luminanceThreshold
+  0.95,   // luminanceThreshold — only thrust flame / direct sun hotspots
 );
 composer.addPass(bloomPass);
 
-// ── Lights ────────────────────────────────────────────────────────────────────
-// Hemisphere ambient — deep sky / dark ground
-scene.add(new THREE.HemisphereLight(0x1a1f2e, 0x0a0a0a, 0.3));
+// ── Lights — golden hour ─────────────────────────────────────────────────────
+// Hemisphere: sunset pink sky / warm dark earth
+scene.add(new THREE.HemisphereLight(0xf5b889, 0x2a2520, 0.8));
 
-// Key light — warm front-left, casts soft shadows
-const keyLight = new THREE.DirectionalLight(0xffd9a0, 1.2);
-keyLight.position.set(-80, 120, 180);
+// Sun: warm orange-white, ~8° above horizon, front-left
+const keyLight = new THREE.DirectionalLight(0xffc89a, 2.5);
+keyLight.position.set(-300, 70, 200);
 keyLight.castShadow = true;
 keyLight.shadow.mapSize.setScalar(2048);
-keyLight.shadow.camera.near = 1;
-keyLight.shadow.camera.far  = 800;
-keyLight.shadow.camera.left = keyLight.shadow.camera.bottom = -300;
-keyLight.shadow.camera.right = keyLight.shadow.camera.top   =  300;
+keyLight.shadow.camera.near   = 1;
+keyLight.shadow.camera.far    = 900;
+keyLight.shadow.camera.left   = keyLight.shadow.camera.bottom = -350;
+keyLight.shadow.camera.right  = keyLight.shadow.camera.top   =  350;
+keyLight.shadow.bias = -0.0001;
 scene.add(keyLight);
-
-// Fill light — cool blue, back-right, low angle
-const fillLight = new THREE.DirectionalLight(0x4a6fa5, 0.4);
-fillLight.position.set(120, 30, -200);
-scene.add(fillLight);
 
 // Engine thrust light — tight pool under nozzle, scales with thrust
 const engineLight = new THREE.PointLight(0xff7a40, 0, 40);
 scene.add(engineLight);
 
-// ── Stars ─────────────────────────────────────────────────────────────────────
+// ── Golden hour gradient sky sphere ──────────────────────────────────────────
 {
-  const pos = [];
-  for (let i = 0; i < 4000; i++) {
-    const r = 1500 + Math.random() * 800;
-    const t = Math.random() * 2 * Math.PI;
-    const p = Math.acos(2 * Math.random() - 1);
-    pos.push(r * Math.sin(p) * Math.cos(t), r * Math.cos(p), r * Math.sin(p) * Math.sin(t));
+  const skyGeo = new THREE.SphereGeometry(2000, 32, 16);
+  const skyPos = skyGeo.attributes.position.array;
+  const N = skyPos.length / 3;
+  const skyCol = new Float32Array(N * 3);
+
+  // #f5b889 horizon → #e89a5e mid → #3d5a7a zenith
+  for (let i = 0; i < N; i++) {
+    const t = Math.max(0, Math.min(1, skyPos[i * 3 + 1] / 2000)); // 0=horizon, 1=zenith
+    let r, g, b;
+    if (t < 0.3) {
+      const s = t / 0.3;
+      r = 0.961 + s * (0.910 - 0.961);
+      g = 0.722 + s * (0.604 - 0.722);
+      b = 0.537 + s * (0.369 - 0.537);
+    } else {
+      const s = (t - 0.3) / 0.7;
+      r = 0.910 + s * (0.239 - 0.910);
+      g = 0.604 + s * (0.353 - 0.604);
+      b = 0.369 + s * (0.478 - 0.369);
+    }
+    skyCol[i * 3] = r; skyCol[i * 3 + 1] = g; skyCol[i * 3 + 2] = b;
   }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  scene.add(new THREE.Points(geo, new THREE.PointsMaterial({
-    color: 0xffffff, size: 1.8, sizeAttenuation: false,
+  skyGeo.setAttribute('color', new THREE.BufferAttribute(skyCol, 3));
+  scene.add(new THREE.Mesh(skyGeo, new THREE.MeshBasicMaterial({
+    vertexColors: true, side: THREE.BackSide, depthWrite: false,
   })));
 }
 
@@ -274,7 +284,7 @@ scene.add(ground);
 }
 
 // ── Rocket materials ──────────────────────────────────────────────────────────
-const rocketWhiteMat    = new THREE.MeshPhongMaterial({ color: 0xf0f0f0, shininess: 90, specular: 0x333333 });
+const rocketWhiteMat    = new THREE.MeshStandardMaterial({ color: 0xf0f0f0, roughness: 0.6, metalness: 0.0 });
 const interstageGrayMat = new THREE.MeshPhongMaterial({ color: 0xd0d0d0, shininess: 60, specular: 0x222222 });
 const engineSectionMat  = new THREE.MeshPhongMaterial({ color: 0x505050, shininess: 60, specular: 0x111111 });
 const engineMat         = new THREE.MeshPhongMaterial({ color: 0x303030, shininess: 80, specular: 0x111111 });
@@ -413,47 +423,33 @@ flameGroup.position.y = -2.5;
 flameGroup.visible = false;
 rocketGroup.add(flameGroup);
 
-// Broad glow disc — blooms around the nozzle cluster
-const glowSprite = new THREE.Sprite(new THREE.SpriteMaterial({
-  color: 0xff8040,
-  transparent: true, opacity: 0.15,
-  blending: THREE.AdditiveBlending, depthWrite: false,
-}));
-glowSprite.scale.set(22, 22, 1);
-flameGroup.add(glowSprite);
-
-// Thrust plume anchor — tip fixed at y=0, base extends downward on scale.y
+// Thrust plume anchor — tip fixed at y=0, base extends downward via scale.y
 const thrustConeAnchor = new THREE.Group();
 flameGroup.add(thrustConeAnchor);
 
-// Unit cone: height=1, tip at y=0 after translate, base at y=-1
-// Vertex colours: white-hot at tip → orange-red at base (additive blend)
-const _thrustGeo = new THREE.ConeGeometry(2, 1, 16, 6, true);
-_thrustGeo.translate(0, -0.5, 0);
-{
-  const pos = _thrustGeo.attributes.position.array;
-  const n   = pos.length / 3;
-  const col = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) {
-    const norm = Math.max(0, Math.min(1, -pos[i * 3 + 1])); // 0=tip, 1=base
-    col[i * 3]     = 1.0;
-    col[i * 3 + 1] = 1.0 - norm * 0.78;
-    col[i * 3 + 2] = 0.9 - norm * 0.9;
-  }
-  _thrustGeo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-}
-const thrustConeMesh = new THREE.Mesh(_thrustGeo, new THREE.MeshBasicMaterial({
-  vertexColors: true, transparent: true, opacity: 0.92,
-  blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+// Inner core cone — narrow, white-hot with emissive orange
+const _coreGeo = new THREE.ConeGeometry(0.9, 1, 14, 4);
+_coreGeo.translate(0, -0.5, 0);  // tip at y=0, base at y=-1
+const thrustConeMesh = new THREE.Mesh(_coreGeo, new THREE.MeshStandardMaterial({
+  color: 0xfff0d0,
+  emissive: 0xff8040,
+  emissiveIntensity: 1.5,
+  roughness: 1, metalness: 0,
+  transparent: true, opacity: 0.92,
+  side: THREE.DoubleSide, depthWrite: false,
 }));
 thrustConeAnchor.add(thrustConeMesh);
 
-// Outer diffuse plume — slightly wider, orange, softer
-const _outerGeo = new THREE.ConeGeometry(3, 1, 12, 4, true);
-_outerGeo.translate(0, -0.5, 0);
-thrustConeAnchor.add(new THREE.Mesh(_outerGeo, new THREE.MeshBasicMaterial({
-  color: 0xff3300, transparent: true, opacity: 0.30,
-  blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+// Outer plume cone — wider, deeper orange, softer
+const _plumeGeo = new THREE.ConeGeometry(2.0, 1, 12, 4);
+_plumeGeo.translate(0, -0.5, 0);
+thrustConeAnchor.add(new THREE.Mesh(_plumeGeo, new THREE.MeshStandardMaterial({
+  color: 0xff5500,
+  emissive: 0xff4400,
+  emissiveIntensity: 0.6,
+  roughness: 1, metalness: 0,
+  transparent: true, opacity: 0.55,
+  side: THREE.DoubleSide, depthWrite: false,
 })));
 
 // ── Exhaust particles ─────────────────────────────────────────────────────────
@@ -721,22 +717,20 @@ document.getElementById('timeline-wrap').addEventListener('click', e => {
 // ── Flame helpers ─────────────────────────────────────────────────────────────
 let flickT = 0;
 
-function updateFlame(thrustN) {
+function updateFlame(thrustN, active) {
   const ratio = thrustN / MAX_THRUST;
-  flameGroup.visible = ratio > 0.005;
+  flameGroup.visible = active && ratio > 0.005;
   if (!flameGroup.visible) return;
   flickT += 0.3;
   const flicker = 1 + 0.12 * Math.sin(flickT * 11.3) + 0.07 * Math.sin(flickT * 7.1);
 
-  // Plume: 0→12 m, narrows/widens with thrust, flickers
+  // Scale plume: 0→12 m long, slight width variation with thrust
   const plumeLen = 12 * ratio * flicker;
   const plumeWid = (0.65 + ratio * 0.45) * flicker;
   thrustConeAnchor.scale.set(plumeWid, plumeLen, plumeWid);
-  thrustConeMesh.material.opacity = 0.75 + 0.2 * ratio;
 
-  // Glow disc scales and brightens with thrust
-  glowSprite.material.opacity = 0.08 + 0.32 * ratio * flicker;
-  glowSprite.scale.setScalar(14 + 28 * ratio);
+  // Emissive intensity: scales with thrust, hard cap at 1.5
+  thrustConeMesh.material.emissiveIntensity = Math.min(0.9, 0.35 + ratio * 0.55);
 }
 
 // ── Render loop ───────────────────────────────────────────────────────────────
@@ -776,14 +770,20 @@ function renderLoop(ts) {
   );
   finPivots.forEach(fp => { fp.rotation.z = (1 - finDeployT) * Math.PI / 2; });
 
-  // Flame
-  updateFlame(f.thrust);
+  // Active thrust: not paused, not landed, not crashed
+  const tiltDeg     = Math.abs(normDeg(f.theta));
+  const isLanded    = ry <= 0.5;
+  const isCrashed   = ry < 50 && tiltDeg > 45;
+  const thrustActive = playing && !isLanded && !isCrashed;
 
-  // Engine light follows nozzle in world space
+  // Flame — hidden immediately on pause, crash, or landing
+  updateFlame(f.thrust, thrustActive);
+
+  // Engine light follows nozzle; zeroed when flame is off
   const lightY = ry - 2.5 * Math.cos(f.theta);
   const lightX = f.x  - 2.5 * Math.sin(f.theta);
   engineLight.position.set(lightX, lightY, 0);
-  engineLight.intensity = (f.thrust / MAX_THRUST) * 12;
+  engineLight.intensity = thrustActive ? (f.thrust / MAX_THRUST) * 12 : 0;
 
   // Exhaust particles (emit when thrusting, update every frame)
   if (playing && f.thrust > 500) {
@@ -791,7 +791,7 @@ function renderLoop(ts) {
     emitExhaust(f.thrust, emitCount);
     // Dust kickup when close to ground
     if (ry < 30) {
-      const dustCount = Math.ceil((1 - ry / 30) * 4);
+      const dustCount = Math.ceil((1 - ry / 30) * 6);
       emitDust(f.x, dustCount);
     }
   }
