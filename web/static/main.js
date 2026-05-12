@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { EffectComposer } from '/pp/EffectComposer.js';
+import { RenderPass }     from '/pp/RenderPass.js';
+import { UnrealBloomPass } from '/pp/UnrealBloomPass.js';
 
 const MAX_THRUST  = 30_000;
 const RAD2DEG     = 180 / Math.PI;
@@ -7,6 +10,8 @@ const BODY_R_TOP  = 0.5;
 const BODY_R_BOT  = 0.7;
 const LEG_DEPLOY_START = 30;  // m — legs begin to extend
 const LEG_DEPLOY_FULL  = 5;   // m — legs fully extended
+const FIN_DEPLOY_START = 150; // m — grid fins begin to deploy
+const FIN_DEPLOY_FULL  = 80;  // m — grid fins fully deployed
 
 // ── Renderer ──────────────────────────────────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -14,34 +19,53 @@ renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
 document.body.appendChild(renderer.domElement);
 
 // ── Scene ─────────────────────────────────────────────────────────────────────
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x04080f);
-scene.fog = new THREE.FogExp2(0x04080f, 0.0004);
+scene.background = new THREE.Color(0x0a0f1a);
+scene.fog = new THREE.Fog(0x0a0f1a, 50, 400);
 
 // ── Camera ────────────────────────────────────────────────────────────────────
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 5000);
 camera.position.set(0, 130, 210);
 camera.lookAt(0, 90, 0);
 
+// ── Post-processing ───────────────────────────────────────────────────────────
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  0.6,    // strength
+  0.4,    // radius
+  0.85,   // luminanceThreshold
+);
+composer.addPass(bloomPass);
+
 // ── Lights ────────────────────────────────────────────────────────────────────
-scene.add(new THREE.AmbientLight(0x1a2a40, 2.0));
+// Hemisphere ambient — deep sky / dark ground
+scene.add(new THREE.HemisphereLight(0x1a1f2e, 0x0a0a0a, 0.3));
 
-// Moonlight — cool blue-white from high angle
-const moon = new THREE.DirectionalLight(0xb0c8e8, 0.6);
-moon.position.set(-200, 600, 300);
-moon.castShadow = true;
-moon.shadow.mapSize.setScalar(2048);
-moon.shadow.camera.near = 1;
-moon.shadow.camera.far  = 1500;
-moon.shadow.camera.left = moon.shadow.camera.bottom = -250;
-moon.shadow.camera.right = moon.shadow.camera.top   =  250;
-scene.add(moon);
+// Key light — warm front-left, casts soft shadows
+const keyLight = new THREE.DirectionalLight(0xffd9a0, 1.2);
+keyLight.position.set(-80, 120, 180);
+keyLight.castShadow = true;
+keyLight.shadow.mapSize.setScalar(2048);
+keyLight.shadow.camera.near = 1;
+keyLight.shadow.camera.far  = 800;
+keyLight.shadow.camera.left = keyLight.shadow.camera.bottom = -300;
+keyLight.shadow.camera.right = keyLight.shadow.camera.top   =  300;
+scene.add(keyLight);
 
-// Engine glow light — follows the rocket nozzle
-const engineLight = new THREE.PointLight(0xff7700, 0, 120);
+// Fill light — cool blue, back-right, low angle
+const fillLight = new THREE.DirectionalLight(0x4a6fa5, 0.4);
+fillLight.position.set(120, 30, -200);
+scene.add(fillLight);
+
+// Engine thrust light — tight pool under nozzle, scales with thrust
+const engineLight = new THREE.PointLight(0xff7a40, 0, 40);
 scene.add(engineLight);
 
 // ── Stars ─────────────────────────────────────────────────────────────────────
@@ -60,77 +84,147 @@ scene.add(engineLight);
   })));
 }
 
-// ── KSC Ground — concrete ─────────────────────────────────────────────────────
+// ── Ground — flat concrete ────────────────────────────────────────────────────
 const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(4000, 4000),
-  new THREE.MeshLambertMaterial({ color: 0x1a1a18 }),
+  new THREE.MeshLambertMaterial({ color: 0x2a2d33 }),
 );
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
 scene.add(ground);
 
-// Concrete apron around the landing zone
+// ── Octagonal landing pad — 30 m wide, 0.5 m raised ──────────────────────────
 {
-  const apron = new THREE.Mesh(
-    new THREE.PlaneGeometry(160, 160),
-    new THREE.MeshLambertMaterial({ color: 0x252520 }),
-  );
-  apron.rotation.x = -Math.PI / 2;
-  apron.position.y = 0.01;
-  scene.add(apron);
-}
-
-// KSC Landing Zone 1 — SpaceX RTLS pad
-{
-  const concreteMat = new THREE.MeshLambertMaterial({ color: 0x2e2e2b });
-  const whiteMat    = new THREE.MeshBasicMaterial({ color: 0xddddcc, side: THREE.DoubleSide });
-  const yellowMat   = new THREE.MeshBasicMaterial({ color: 0xd4a017, side: THREE.DoubleSide });
-
-  // Pad surface
-  const pad = new THREE.Mesh(new THREE.CylinderGeometry(18, 18, 0.2, 48), concreteMat);
-  pad.position.y = 0.1;
+  const padMat = new THREE.MeshLambertMaterial({ color: 0x3c3f46 });
+  const pad = new THREE.Mesh(new THREE.CylinderGeometry(15, 15, 0.5, 8), padMat);
+  pad.position.y = 0.25;
   pad.receiveShadow = true;
   scene.add(pad);
 
-  // Outer ring stripe
-  const outerRing = new THREE.Mesh(
-    new THREE.RingGeometry(16.5, 18.2, 48),
-    whiteMat,
-  );
-  outerRing.rotation.x = -Math.PI / 2;
-  outerRing.position.y = 0.22;
-  scene.add(outerRing);
+  // Octagonal hazard stripe border — 16 custom quads, 2 per face, yellow/black
+  {
+    const outerR = 15.0, innerR = 12.8, Y = 0.51;
+    const hColors = [0xd4a500, 0x141414];
+    for (let s = 0; s < 16; s++) {
+      const fI = Math.floor(s / 2), sub = s % 2;
+      const a0 = (fI / 8) * Math.PI * 2, a1 = ((fI + 1) / 8) * Math.PI * 2;
+      // Outer & inner octagon edge points for this face
+      const oA = [outerR * Math.sin(a0), outerR * Math.cos(a0)];
+      const oB = [outerR * Math.sin(a1), outerR * Math.cos(a1)];
+      const oM = [(oA[0]+oB[0])/2, (oA[1]+oB[1])/2];
+      const iA = [innerR * Math.sin(a0), innerR * Math.cos(a0)];
+      const iB = [innerR * Math.sin(a1), innerR * Math.cos(a1)];
+      const iM = [(iA[0]+iB[0])/2, (iA[1]+iB[1])/2];
+      const [ox0,oz0] = sub===0 ? oA : oM;
+      const [ox1,oz1] = sub===0 ? oM : oB;
+      const [ix0,iz0] = sub===0 ? iA : iM;
+      const [ix1,iz1] = sub===0 ? iM : iB;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(
+        new Float32Array([ox0,Y,oz0, ox1,Y,oz1, ix1,Y,iz1, ix0,Y,iz0]), 3));
+      geo.setIndex([0,1,2, 0,2,3]);
+      geo.computeVertexNormals();
+      scene.add(new THREE.Mesh(geo,
+        new THREE.MeshBasicMaterial({ color: hColors[s%2], side: THREE.DoubleSide })));
+    }
+  }
 
-  // Inner target circle
-  const innerRing = new THREE.Mesh(
-    new THREE.RingGeometry(5.5, 6.5, 48),
-    yellowMat,
-  );
-  innerRing.rotation.x = -Math.PI / 2;
-  innerRing.position.y = 0.22;
-  scene.add(innerRing);
-
-  // SpaceX X marking — two crossing bars
-  [-Math.PI / 4, Math.PI / 4].forEach(a => {
-    const bar = new THREE.Mesh(
-      new THREE.PlaneGeometry(22, 2.2),
-      yellowMat,
-    );
-    bar.rotation.x = -Math.PI / 2;
-    bar.rotation.z = a;
-    bar.position.y = 0.22;
-    scene.add(bar);
+  // Centre crosshair arms
+  const crossMat = new THREE.MeshBasicMaterial({ color: 0xc8a000, side: THREE.DoubleSide });
+  [0, Math.PI / 2].forEach(rot => {
+    const arm = new THREE.Mesh(new THREE.PlaneGeometry(20, 1.0), crossMat);
+    arm.rotation.x = -Math.PI / 2;
+    arm.rotation.z = rot;
+    arm.position.y = 0.52;
+    scene.add(arm);
   });
 
-  // Compass tick marks
-  for (let i = 0; i < 8; i++) {
-    const angle = (i / 8) * Math.PI * 2;
-    const tick = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 3), whiteMat);
-    tick.rotation.x = -Math.PI / 2;
-    tick.rotation.z = angle;
-    tick.position.set(Math.sin(angle) * 14, 0.22, Math.cos(angle) * 14);
-    scene.add(tick);
+  // Inner aim ring
+  const aimRing = new THREE.Mesh(
+    new THREE.RingGeometry(3.0, 3.9, 32),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide }),
+  );
+  aimRing.rotation.x = -Math.PI / 2;
+  aimRing.position.y = 0.52;
+  scene.add(aimRing);
+}
+
+// ── Lightning rod towers — ~80 m, left and right of pad ───────────────────────
+{
+  const tMat = new THREE.MeshLambertMaterial({ color: 0x5a6880 });
+
+  function buildTower(px, pz) {
+    // Each segment: [y_bottom, y_top, half_width_bottom, half_width_top]
+    const segs = [
+      [0,  16, 3.2, 2.5],
+      [16, 32, 2.5, 1.8],
+      [32, 46, 1.8, 1.2],
+      [46, 58, 1.2, 0.7],
+      [58, 68, 0.7, 0.28],
+    ];
+
+    segs.forEach(([y0, y1, hw0, hw1]) => {
+      const sh = y1 - y0, midHw = (hw0 + hw1) / 2;
+
+      // Four corner columns
+      [-1, 1].forEach(sx => [-1, 1].forEach(sz => {
+        const col = new THREE.Mesh(new THREE.BoxGeometry(0.38, sh, 0.38), tMat);
+        col.position.set(px + sx * midHw, y0 + sh / 2, pz + sz * midHw);
+        scene.add(col);
+      }));
+
+      // Horizontal ring at top of each segment
+      const hw = hw1;
+      [-1, 1].forEach(s => {
+        const bx = new THREE.Mesh(new THREE.BoxGeometry(hw * 2 + 0.4, 0.28, 0.28), tMat);
+        bx.position.set(px, y1, pz + s * hw);
+        scene.add(bx);
+        const bz = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, hw * 2 + 0.4), tMat);
+        bz.position.set(px + s * hw, y1, pz);
+        scene.add(bz);
+      });
+    });
+
+    // Tapered spike
+    const spike = new THREE.Mesh(new THREE.CylinderGeometry(0, 0.32, 10, 4), tMat);
+    spike.position.set(px, 73, pz);
+    scene.add(spike);
+
+    // Aviation warning light
+    const bulb = new THREE.Mesh(
+      new THREE.SphereGeometry(0.55, 6, 4),
+      new THREE.MeshBasicMaterial({ color: 0xff2200 }),
+    );
+    bulb.position.set(px, 78.2, pz);
+    scene.add(bulb);
   }
+
+  buildTower(-42, 4);
+  buildTower( 42, 4);
+}
+
+// ── Fuel storage spheres — three in mid-background ────────────────────────────
+{
+  const sphereMat = new THREE.MeshLambertMaterial({ color: 0xdde0e4 });
+  const bandMat   = new THREE.MeshLambertMaterial({ color: 0xbb2200 });
+  const baseMat   = new THREE.MeshLambertMaterial({ color: 0x3a3c40 });
+
+  [[-44, -92], [0, -108], [44, -92]].forEach(([sx, sz]) => {
+    // Concrete pedestal
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(5.5, 6.5, 3, 8), baseMat);
+    base.position.set(sx, 1.5, sz);
+    scene.add(base);
+
+    // Low-poly sphere body
+    const sphere = new THREE.Mesh(new THREE.SphereGeometry(7.5, 12, 8), sphereMat);
+    sphere.position.set(sx, 3 + 7.5, sz);
+    scene.add(sphere);
+
+    // Red equatorial band
+    const band = new THREE.Mesh(new THREE.TorusGeometry(7.5, 0.9, 4, 16), bandMat);
+    band.position.set(sx, 3 + 7.5, sz);
+    scene.add(band);
+  });
 }
 
 // ── KSC Environment ───────────────────────────────────────────────────────────
@@ -145,60 +239,6 @@ scene.add(ground);
   scene.add(glowDome);
 }
 
-// Florida treeline — scrub pine silhouettes ringing the pad
-{
-  const treeMat  = new THREE.MeshBasicMaterial({ color: 0x060c06 });
-  const trunkMat = new THREE.MeshBasicMaterial({ color: 0x050905 });
-  const rng = (a, b) => a + Math.random() * (b - a);
-
-  for (let i = 0; i < 320; i++) {
-    const angle  = rng(0, Math.PI * 2);
-    const dist   = rng(230, 420);
-    const x      = Math.cos(angle) * dist;
-    const z      = Math.sin(angle) * dist;
-    const h      = rng(12, 32);
-    const isPalm = Math.random() < 0.2;
-
-    if (isPalm) {
-      // Slender palm trunk
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.5, h * 0.85, 5), trunkMat);
-      trunk.position.set(x, h * 0.425, z);
-      scene.add(trunk);
-      // Palm canopy — flat wide cone
-      const canopy = new THREE.Mesh(new THREE.ConeGeometry(rng(4, 7), h * 0.2, 6), treeMat);
-      canopy.position.set(x, h * 0.85 + h * 0.1, z);
-      scene.add(canopy);
-    } else {
-      // Florida scrub pine — tall narrow cone
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.6, h * 0.35, 5), trunkMat);
-      trunk.position.set(x, h * 0.175, z);
-      scene.add(trunk);
-      const canopy = new THREE.Mesh(new THREE.ConeGeometry(rng(2.5, 4.5), h * 0.72, 6), treeMat);
-      canopy.position.set(x, h * 0.35 + h * 0.36, z);
-      scene.add(canopy);
-    }
-  }
-}
-
-// Vehicle Assembly Building (VAB) silhouette — NW of LZ-1, ~5 km away
-{
-  const silMat = new THREE.MeshBasicMaterial({ color: 0x090d12 });
-
-  // Main VAB box
-  const vab = new THREE.Mesh(new THREE.BoxGeometry(55, 110, 45), silMat);
-  vab.position.set(-320, 55, -480);
-  scene.add(vab);
-
-  // Smaller adjacent structure (Low Bay)
-  const lowBay = new THREE.Mesh(new THREE.BoxGeometry(35, 55, 40), silMat);
-  lowBay.position.set(-370, 27, -475);
-  scene.add(lowBay);
-
-  // Launch Control Centre
-  const lcc = new THREE.Mesh(new THREE.BoxGeometry(50, 28, 28), silMat);
-  lcc.position.set(-240, 14, -440);
-  scene.add(lcc);
-}
 
 // Floodlight towers around the pad
 {
@@ -218,7 +258,7 @@ scene.add(ground);
     scene.add(arm);
 
     // Warm floodlight
-    const flood = new THREE.PointLight(0xfff5d0, 1.2, 160);
+    const flood = new THREE.PointLight(0xfff5d0, 4.0, 250);
     flood.position.set(tx, 30, tz);
     scene.add(flood);
   });
@@ -233,55 +273,110 @@ scene.add(ground);
   scene.add(water);
 }
 
-// ── Materials ─────────────────────────────────────────────────────────────────
-const silverMat = new THREE.MeshPhongMaterial({ color: 0xd5d8dc, shininess: 130, specular: 0x555555 });
-const darkMat   = new THREE.MeshPhongMaterial({ color: 0x1a1a28, shininess: 50 });
-const accentMat = new THREE.MeshPhongMaterial({ color: 0x1a4d99, shininess: 120 });
-const windowMat = new THREE.MeshPhongMaterial({ color: 0x88ccff, emissive: 0x224466, shininess: 200 });
+// ── Rocket materials ──────────────────────────────────────────────────────────
+const rocketWhiteMat    = new THREE.MeshPhongMaterial({ color: 0xf0f0f0, shininess: 90, specular: 0x333333 });
+const interstageGrayMat = new THREE.MeshPhongMaterial({ color: 0xd0d0d0, shininess: 60, specular: 0x222222 });
+const engineSectionMat  = new THREE.MeshPhongMaterial({ color: 0x505050, shininess: 60, specular: 0x111111 });
+const engineMat         = new THREE.MeshPhongMaterial({ color: 0x303030, shininess: 80, specular: 0x111111 });
+const engineBellMat     = new THREE.MeshPhongMaterial({ color: 0x3a2000, emissive: 0x180e00, shininess: 40 });
+const legMat            = new THREE.MeshPhongMaterial({ color: 0x2a2a2a, shininess: 30 });
+const footMat           = new THREE.MeshPhongMaterial({ color: 0xcccccc, shininess: 50 });
+const logoMat           = new THREE.MeshPhongMaterial({ color: 0x1a1a1a, shininess: 10 });
 
-// ── Rocket ────────────────────────────────────────────────────────────────────
+// Grid fin canvas lattice texture
+const gridFinMat = new THREE.MeshPhongMaterial({ color: 0x3a3a3a, shininess: 40 });
+{
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 64;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#2a2a2a';
+  ctx.fillRect(0, 0, 64, 64);
+  ctx.strokeStyle = '#555555';
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i <= 8; i++) {
+    ctx.beginPath(); ctx.moveTo(i * 8, 0); ctx.lineTo(i * 8, 64); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i * 8); ctx.lineTo(64, i * 8); ctx.stroke();
+  }
+  const finTex = new THREE.CanvasTexture(c);
+  finTex.wrapS = finTex.wrapT = THREE.RepeatWrapping;
+  finTex.repeat.set(2, 2);
+  gridFinMat.map = finTex;
+}
+
+// ── Rocket group ──────────────────────────────────────────────────────────────
+// Origin = base of engine section (y=0). Total height 45 m, diameter 3.7 m.
 const rocketGroup = new THREE.Group();
-rocketGroup.scale.setScalar(2.5);
 scene.add(rocketGroup);
 
-// Body
-const body = new THREE.Mesh(new THREE.CylinderGeometry(BODY_R_TOP, BODY_R_BOT, BODY_H, 14), silverMat);
-body.position.y = BODY_H / 2;
-body.castShadow = true;
-rocketGroup.add(body);
-
-// Nose cone
-const nose = new THREE.Mesh(new THREE.ConeGeometry(BODY_R_TOP, 4.5, 14), silverMat);
-nose.position.y = BODY_H + 2.25;
-rocketGroup.add(nose);
-
-// Accent band
-const band = new THREE.Mesh(
-  new THREE.CylinderGeometry(BODY_R_TOP + 0.06, BODY_R_TOP + 0.06, 0.9, 14), accentMat,
+// Engine section (y=0→5, slightly flared skirt, dark grey)
+const engineSec = new THREE.Mesh(
+  new THREE.CylinderGeometry(1.85, 2.05, 5, 16), engineSectionMat,
 );
-band.position.y = BODY_H * 0.7;
-rocketGroup.add(band);
+engineSec.position.y = 2.5;
+engineSec.castShadow = true;
+rocketGroup.add(engineSec);
 
-// Viewport window
-const win = new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 8), windowMat);
-win.position.set(BODY_R_TOP + 0.05, BODY_H * 0.82, 0);
-rocketGroup.add(win);
+// Main fuselage (y=5→40, straight, white)
+const fuselage = new THREE.Mesh(
+  new THREE.CylinderGeometry(1.85, 1.85, 35, 16), rocketWhiteMat,
+);
+fuselage.position.y = 22.5;
+fuselage.castShadow = true;
+rocketGroup.add(fuselage);
 
-// Engine nozzle
-const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.45, 2.2, 12), darkMat);
-nozzle.position.y = -1.1;
-rocketGroup.add(nozzle);
+// Interstage / nose (y=40→45, tapers to point)
+const interstage = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.05, 1.85, 5, 16), interstageGrayMat,
+);
+interstage.position.y = 42.5;
+interstage.castShadow = true;
+rocketGroup.add(interstage);
 
-// Fins — 4 at base
-[-1, 1].forEach(side => {
-  [0, Math.PI / 2].forEach(rotY => {
-    const fin = new THREE.Mesh(new THREE.BoxGeometry(3.8, 4.5, 0.18), darkMat);
-    fin.position.set(side * (BODY_R_BOT + 1.7), 2.25, 0);
-    fin.rotation.y = rotY;
-    fin.castShadow = true;
-    rocketGroup.add(fin);
+// SpaceX logo placeholder — dark rectangle on the fuselage
+const logoPlate = new THREE.Mesh(new THREE.BoxGeometry(3, 1, 0.06), logoMat);
+logoPlate.position.set(1.87, 25, 0);
+rocketGroup.add(logoPlate);
+
+// ── Merlin octaweb engine cluster ─────────────────────────────────────────────
+// 1 center + 8 ring engines hanging below the engine section
+{
+  const ringOffsets = [];
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    ringOffsets.push([Math.cos(a) * 1.0, Math.sin(a) * 1.0]);
+  }
+  [[0, 0], ...ringOffsets].forEach(([ex, ez]) => {
+    // Engine housing cylinder
+    const eng = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.35, 0.30, 1.5, 8), engineMat,
+    );
+    eng.position.set(ex, -0.75, ez);
+    rocketGroup.add(eng);
+    // Bell nozzle with faint orange emissive
+    const bell = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.50, 0.28, 0.7, 8), engineBellMat,
+    );
+    bell.position.set(ex, -1.85, ez);
+    rocketGroup.add(bell);
   });
+}
+
+// ── Grid fins ─────────────────────────────────────────────────────────────────
+// 4 fins near top of fuselage; finPivots.rotation.z drives fold/deploy animation.
+const finPivots = [];
+[0, Math.PI / 2, Math.PI, 3 * Math.PI / 2].forEach(rotY => {
+  const pivot = new THREE.Group();
+  pivot.rotation.y = rotY;
+  pivot.position.y = 38;
+
+  const finBox = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 0.3), gridFinMat);
+  finBox.position.x = 2.35;
+  pivot.add(finBox);
+
+  rocketGroup.add(pivot);
+  finPivots.push(pivot);
 });
+finPivots.forEach(fp => { fp.rotation.z = Math.PI / 2; }); // start folded upward
 
 // ── Landing legs ─────────────────────────────────────────────────────────────
 // Each leg pivots at the body; rotation.z controls deploy angle.
@@ -289,17 +384,23 @@ const legPivots = [];
 [0, Math.PI / 2, Math.PI, 3 * Math.PI / 2].forEach(rotY => {
   const pivot = new THREE.Group();
   pivot.rotation.y = rotY;
-  pivot.position.y = 2.5;
+  pivot.position.y = 2.0;
 
-  // Main strut
-  const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 7, 6), darkMat);
-  strut.position.set(1.2, -3.5, 0);
+  // Primary strut
+  const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.06, 7, 6), legMat);
+  strut.position.set(1.8, -3.5, 0);
   strut.rotation.z = -0.18;
   pivot.add(strut);
 
-  // Foot pad
-  const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 0.25, 8), darkMat);
-  foot.position.set(2.6, -7, 0);
+  // A-frame brace (Falcon 9 style)
+  const brace = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 4.5, 6), legMat);
+  brace.position.set(2.5, -1.5, 0);
+  brace.rotation.z = -0.65;
+  pivot.add(brace);
+
+  // Foot pad (light grey contact disk)
+  const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.2, 8), footMat);
+  foot.position.set(3.8, -7.0, 0);
   pivot.add(foot);
 
   rocketGroup.add(pivot);
@@ -308,35 +409,52 @@ const legPivots = [];
 
 // ── Flame ─────────────────────────────────────────────────────────────────────
 const flameGroup = new THREE.Group();
-flameGroup.position.y = -2.2;
+flameGroup.position.y = -2.5;
 flameGroup.visible = false;
 rocketGroup.add(flameGroup);
 
-// Soft glow sprite (large semitransparent disc behind the flame)
+// Broad glow disc — blooms around the nozzle cluster
 const glowSprite = new THREE.Sprite(new THREE.SpriteMaterial({
-  color: 0xff5500,
-  transparent: true,
-  opacity: 0.18,
-  blending: THREE.AdditiveBlending,
-  depthWrite: false,
+  color: 0xff8040,
+  transparent: true, opacity: 0.15,
+  blending: THREE.AdditiveBlending, depthWrite: false,
 }));
-glowSprite.scale.set(18, 18, 1);
-glowSprite.position.y = -3;
+glowSprite.scale.set(22, 22, 1);
 flameGroup.add(glowSprite);
 
-// Outer flame cone
-const outerFlameMat = new THREE.MeshBasicMaterial({
-  color: 0xff6600, transparent: true, opacity: 0.85,
-});
-const outerFlameMesh = new THREE.Mesh(new THREE.ConeGeometry(0.45, 1, 10), outerFlameMat);
-outerFlameMesh.rotation.z = Math.PI;
-flameGroup.add(outerFlameMesh);
+// Thrust plume anchor — tip fixed at y=0, base extends downward on scale.y
+const thrustConeAnchor = new THREE.Group();
+flameGroup.add(thrustConeAnchor);
 
-// Inner core (bright yellow)
-const innerFlameMat = new THREE.MeshBasicMaterial({ color: 0xffee88 });
-const innerFlameMesh = new THREE.Mesh(new THREE.ConeGeometry(0.2, 1, 8), innerFlameMat);
-innerFlameMesh.rotation.z = Math.PI;
-flameGroup.add(innerFlameMesh);
+// Unit cone: height=1, tip at y=0 after translate, base at y=-1
+// Vertex colours: white-hot at tip → orange-red at base (additive blend)
+const _thrustGeo = new THREE.ConeGeometry(2, 1, 16, 6, true);
+_thrustGeo.translate(0, -0.5, 0);
+{
+  const pos = _thrustGeo.attributes.position.array;
+  const n   = pos.length / 3;
+  const col = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const norm = Math.max(0, Math.min(1, -pos[i * 3 + 1])); // 0=tip, 1=base
+    col[i * 3]     = 1.0;
+    col[i * 3 + 1] = 1.0 - norm * 0.78;
+    col[i * 3 + 2] = 0.9 - norm * 0.9;
+  }
+  _thrustGeo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+}
+const thrustConeMesh = new THREE.Mesh(_thrustGeo, new THREE.MeshBasicMaterial({
+  vertexColors: true, transparent: true, opacity: 0.92,
+  blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+}));
+thrustConeAnchor.add(thrustConeMesh);
+
+// Outer diffuse plume — slightly wider, orange, softer
+const _outerGeo = new THREE.ConeGeometry(3, 1, 12, 4, true);
+_outerGeo.translate(0, -0.5, 0);
+thrustConeAnchor.add(new THREE.Mesh(_outerGeo, new THREE.MeshBasicMaterial({
+  color: 0xff3300, transparent: true, opacity: 0.30,
+  blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+})));
 
 // ── Exhaust particles ─────────────────────────────────────────────────────────
 const MAX_PARTS = 800;
@@ -344,6 +462,7 @@ let numParts = 0;
 const px  = new Float32Array(MAX_PARTS), py  = new Float32Array(MAX_PARTS), pz  = new Float32Array(MAX_PARTS);
 const pvx = new Float32Array(MAX_PARTS), pvy = new Float32Array(MAX_PARTS), pvz = new Float32Array(MAX_PARTS);
 const pLife = new Float32Array(MAX_PARTS), pDecay = new Float32Array(MAX_PARTS);
+const pIsDust = new Uint8Array(MAX_PARTS);
 
 const partPos  = new Float32Array(MAX_PARTS * 3);
 const partCol  = new Float32Array(MAX_PARTS * 3);
@@ -373,6 +492,24 @@ function emitExhaust(thrustN, count) {
     pvz[idx] = (Math.random() - 0.5) * 0.4 * spd;
     pLife[idx]  = 1.0;
     pDecay[idx] = 0.012 + Math.random() * 0.022;
+    pIsDust[idx] = 0;
+  }
+}
+
+function emitDust(wx, count) {
+  for (let i = 0; i < count && numParts < MAX_PARTS; i++) {
+    const idx = numParts++;
+    const angle = Math.random() * 2 * Math.PI;
+    const r = Math.random() * 10;
+    px[idx]  = wx + Math.cos(angle) * r;
+    py[idx]  = 0.4;
+    pz[idx]  = Math.sin(angle) * r;
+    pvx[idx] = Math.cos(angle) * (2 + Math.random() * 6);
+    pvy[idx] = 0.5 + Math.random() * 2.5;
+    pvz[idx] = Math.sin(angle) * (2 + Math.random() * 6);
+    pLife[idx]  = 1.0;
+    pDecay[idx] = 0.008 + Math.random() * 0.012;
+    pIsDust[idx] = 1;
   }
 }
 
@@ -382,12 +519,13 @@ function updateParticles(dtSec) {
     pLife[i] -= pDecay[i];
     if (pLife[i] <= 0) continue;
     px[i] += pvx[i] * dtSec;  py[i] += pvy[i] * dtSec;  pz[i] += pvz[i] * dtSec;
-    pvy[i] += 3 * dtSec;      // exhaust decelerates (against rocket direction)
+    pvy[i] += 3 * dtSec;
     pvx[i] *= 0.97;            pvz[i] *= 0.97;
     if (alive !== i) {
       px[alive]=px[i]; py[alive]=py[i]; pz[alive]=pz[i];
       pvx[alive]=pvx[i]; pvy[alive]=pvy[i]; pvz[alive]=pvz[i];
       pLife[alive]=pLife[i]; pDecay[alive]=pDecay[i];
+      pIsDust[alive]=pIsDust[i];
     }
     alive++;
   }
@@ -397,10 +535,17 @@ function updateParticles(dtSec) {
     if (i < numParts) {
       const l = pLife[i], t = 1 - l;
       partPos[i*3]=px[i]; partPos[i*3+1]=py[i]; partPos[i*3+2]=pz[i];
-      // yellow → orange → dark red; multiply by life to fade
-      partCol[i*3]   = l * 1.0;
-      partCol[i*3+1] = l * Math.max(0, 0.75 - t * 0.9);
-      partCol[i*3+2] = l * Math.max(0, 0.15 - t * 0.2);
+      if (pIsDust[i]) {
+        // Sandy/concrete dust: #b8a48a fading out
+        partCol[i*3]   = l * 0.72;
+        partCol[i*3+1] = l * 0.64;
+        partCol[i*3+2] = l * 0.54;
+      } else {
+        // Exhaust: yellow → orange → dark red
+        partCol[i*3]   = l * 1.0;
+        partCol[i*3+1] = l * Math.max(0, 0.75 - t * 0.9);
+        partCol[i*3+2] = l * Math.max(0, 0.15 - t * 0.2);
+      }
     } else {
       partPos[i*3]=partPos[i*3+1]=partPos[i*3+2]=0;
       partCol[i*3]=partCol[i*3+1]=partCol[i*3+2]=0;
@@ -457,11 +602,20 @@ function triggerTouchdown(wx, wy) {
     pvz[idx] = Math.sin(angle) * spd;
     pLife[idx]  = 1.0;
     pDecay[idx] = 0.02 + Math.random() * 0.03;
+    pIsDust[idx] = 0;
   }
 
   // Shockwave ring
   shockwave.visible = true;
   shockwaveScale = 0.1;
+}
+
+// Wrap radians to the display range [-180°, +180°]
+function normDeg(rad) {
+  let d = (rad * RAD2DEG) % 360;
+  if (d >  180) d -= 360;
+  if (d < -180) d += 360;
+  return d;
 }
 
 // ── HUD ───────────────────────────────────────────────────────────────────────
@@ -482,7 +636,7 @@ function updateHUD(f, idx, total) {
   hAlt.textContent = Math.max(0, f.y).toFixed(1) + ' m';
   hVy.textContent  = f.vy.toFixed(2) + ' m/s';
   hSpd.textContent = spd.toFixed(2)  + ' m/s';
-  hTh.textContent  = (f.theta * RAD2DEG).toFixed(1) + '°';
+  hTh.textContent  = normDeg(f.theta).toFixed(1) + '°';
   hM.textContent   = f.m.toFixed(0)  + ' kg';
   const thrKN    = f.thrust / 1000;
   const thrRatio = f.thrust / MAX_THRUST;
@@ -494,10 +648,14 @@ function updateHUD(f, idx, total) {
 }
 
 function updateMissionStatus(f) {
-  const alt = Math.max(0, f.y);
+  const alt      = Math.max(0, f.y);
+  const tiltDeg  = Math.abs(normDeg(f.theta));
   if (alt <= 0.5) {
     missionStatus.textContent = '● LANDED';
     missionStatus.className   = '';
+  } else if (alt < 50 && tiltDeg > 45) {
+    missionStatus.textContent = '● ANOMALY';
+    missionStatus.className   = 'warn';
   } else if (alt <= 30 && f.thrust > 500) {
     missionStatus.textContent = '● LANDING BURN';
     missionStatus.className   = 'warn';
@@ -568,13 +726,17 @@ function updateFlame(thrustN) {
   flameGroup.visible = ratio > 0.005;
   if (!flameGroup.visible) return;
   flickT += 0.3;
-  const flicker = 1 + 0.15 * Math.sin(flickT * 11.3) + 0.09 * Math.sin(flickT * 7.1);
-  const len = (2.5 + 6 * ratio) * flicker;
-  outerFlameMesh.scale.set(0.6 + ratio * 0.5, len, 0.6 + ratio * 0.5);
-  innerFlameMesh.scale.set(0.5 + ratio * 0.3, len * 0.6, 0.5 + ratio * 0.3);
-  outerFlameMat.opacity = 0.65 + 0.3 * ratio;
-  glowSprite.material.opacity = 0.08 + 0.18 * ratio * flicker;
-  glowSprite.scale.setScalar(10 + 14 * ratio);
+  const flicker = 1 + 0.12 * Math.sin(flickT * 11.3) + 0.07 * Math.sin(flickT * 7.1);
+
+  // Plume: 0→12 m, narrows/widens with thrust, flickers
+  const plumeLen = 12 * ratio * flicker;
+  const plumeWid = (0.65 + ratio * 0.45) * flicker;
+  thrustConeAnchor.scale.set(plumeWid, plumeLen, plumeWid);
+  thrustConeMesh.material.opacity = 0.75 + 0.2 * ratio;
+
+  // Glow disc scales and brightens with thrust
+  glowSprite.material.opacity = 0.08 + 0.32 * ratio * flicker;
+  glowSprite.scale.setScalar(14 + 28 * ratio);
 }
 
 // ── Render loop ───────────────────────────────────────────────────────────────
@@ -583,7 +745,7 @@ let prevTs = 0;
 function renderLoop(ts) {
   requestAnimationFrame(renderLoop);
 
-  if (traj.length === 0) { renderer.render(scene, camera); return; }
+  if (traj.length === 0) { composer.render(); return; }
 
   const dtMs  = Math.min(ts - prevTs, 50);   // cap at 50 ms to avoid spiral
   const dtSec = dtMs / 1000;
@@ -608,20 +770,30 @@ function renderLoop(ts) {
   );
   legPivots.forEach(p => { p.rotation.z = deployT * 0.55; });
 
+  // Grid fins — deploy before legs (higher altitude)
+  const finDeployT = THREE.MathUtils.clamp(
+    (FIN_DEPLOY_START - f.y) / (FIN_DEPLOY_START - FIN_DEPLOY_FULL), 0, 1,
+  );
+  finPivots.forEach(fp => { fp.rotation.z = (1 - finDeployT) * Math.PI / 2; });
+
   // Flame
   updateFlame(f.thrust);
 
   // Engine light follows nozzle in world space
-  const lightY = ry - 2.2 * Math.cos(f.theta);
-  const lightX = f.x  - 2.2 * Math.sin(f.theta);
+  const lightY = ry - 2.5 * Math.cos(f.theta);
+  const lightX = f.x  - 2.5 * Math.sin(f.theta);
   engineLight.position.set(lightX, lightY, 0);
-  engineLight.intensity = (f.thrust / MAX_THRUST) * 6;
-  engineLight.distance  = 50 + (f.thrust / MAX_THRUST) * 100;
+  engineLight.intensity = (f.thrust / MAX_THRUST) * 12;
 
   // Exhaust particles (emit when thrusting, update every frame)
   if (playing && f.thrust > 500) {
     const emitCount = Math.ceil((f.thrust / MAX_THRUST) * 5);
     emitExhaust(f.thrust, emitCount);
+    // Dust kickup when close to ground
+    if (ry < 30) {
+      const dustCount = Math.ceil((1 - ry / 30) * 4);
+      emitDust(f.x, dustCount);
+    }
   }
   updateParticles(dtSec * speed);
 
@@ -644,7 +816,7 @@ function renderLoop(ts) {
   updateMissionStatus(f);
   followCamera(f.x, ry, f.thrust);
 
-  renderer.render(scene, camera);
+  composer.render();
 }
 
 // ── Fetch trajectory and start ────────────────────────────────────────────────
@@ -672,4 +844,6 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  composer.setSize(window.innerWidth, window.innerHeight);
+  bloomPass.resolution.set(window.innerWidth, window.innerHeight);
 });
