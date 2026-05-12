@@ -18,6 +18,9 @@ dependencies = [
     "matplotlib>=3.8",
 ]
 
+[tool.hatch.build.targets.wheel]
+packages = ["physics", "viz"]
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
