@@ -61,8 +61,8 @@ def _derivatives(
 
     # Torque about COM from gimbaled engine.
     # tau = -arm * F * sin(gimbal)  (derived from r_nozzle × F_thrust)
-    I = _inertia(m, params)
-    alpha = -params.nozzle_arm * effective_thrust * np.sin(gimbal) / I
+    inertia = _inertia(m, params)
+    alpha = -params.nozzle_arm * effective_thrust * np.sin(gimbal) / inertia
 
     # Tsiolkovsky mass flow: ṁ = -F / (Isp * g0)
     mdot = -effective_thrust / (params.isp * G0)

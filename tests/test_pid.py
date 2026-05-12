@@ -1,7 +1,5 @@
 """Unit tests for the PID autopilot."""
 
-import math
-
 import pytest
 
 from physics import ControllerOutput, PIDGains, RocketPID, State

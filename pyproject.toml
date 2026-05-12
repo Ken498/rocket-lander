@@ -19,9 +19,16 @@ dependencies = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["physics", "viz"]
+packages = ["physics", "viz", "web"]
+
+[project.scripts]
+rocket-server = "web.server:main"
 
 [project.optional-dependencies]
+web = [
+    "fastapi>=0.100",
+    "uvicorn[standard]>=0.23",
+]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=4.1",
