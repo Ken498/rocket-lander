@@ -18,8 +18,8 @@ document.body.appendChild(renderer.domElement);
 
 // ── Scene ─────────────────────────────────────────────────────────────────────
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x050a14);
-scene.fog = new THREE.FogExp2(0x050a14, 0.0005);
+scene.background = new THREE.Color(0x04080f);
+scene.fog = new THREE.FogExp2(0x04080f, 0.0004);
 
 // ── Camera ────────────────────────────────────────────────────────────────────
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 5000);
@@ -27,17 +27,18 @@ camera.position.set(0, 130, 210);
 camera.lookAt(0, 90, 0);
 
 // ── Lights ────────────────────────────────────────────────────────────────────
-scene.add(new THREE.AmbientLight(0x253050, 3.0));
+scene.add(new THREE.AmbientLight(0x1a2a40, 2.0));
 
-const sun = new THREE.DirectionalLight(0xfff0e0, 1.8);
-sun.position.set(300, 500, 150);
-sun.castShadow = true;
-sun.shadow.mapSize.setScalar(2048);
-sun.shadow.camera.near = 1;
-sun.shadow.camera.far  = 1500;
-sun.shadow.camera.left = sun.shadow.camera.bottom = -250;
-sun.shadow.camera.right = sun.shadow.camera.top   =  250;
-scene.add(sun);
+// Moonlight — cool blue-white from high angle
+const moon = new THREE.DirectionalLight(0xb0c8e8, 0.6);
+moon.position.set(-200, 600, 300);
+moon.castShadow = true;
+moon.shadow.mapSize.setScalar(2048);
+moon.shadow.camera.near = 1;
+moon.shadow.camera.far  = 1500;
+moon.shadow.camera.left = moon.shadow.camera.bottom = -250;
+moon.shadow.camera.right = moon.shadow.camera.top   =  250;
+scene.add(moon);
 
 // Engine glow light — follows the rocket nozzle
 const engineLight = new THREE.PointLight(0xff7700, 0, 120);
@@ -59,44 +60,177 @@ scene.add(engineLight);
   })));
 }
 
-// ── Ground ────────────────────────────────────────────────────────────────────
+// ── KSC Ground — concrete ─────────────────────────────────────────────────────
 const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(3000, 3000),
-  new THREE.MeshLambertMaterial({ color: 0x111118 }),
+  new THREE.PlaneGeometry(4000, 4000),
+  new THREE.MeshLambertMaterial({ color: 0x1a1a18 }),
 );
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
 scene.add(ground);
 
-{ const g = new THREE.GridHelper(600, 60, 0x1c2535, 0x161e2d); g.position.y = 0.02; scene.add(g); }
-
-// Landing pad + markings
+// Concrete apron around the landing zone
 {
-  const pad = new THREE.Mesh(
-    new THREE.CylinderGeometry(7, 7, 0.25, 32),
-    new THREE.MeshLambertMaterial({ color: 0x2a3345 }),
+  const apron = new THREE.Mesh(
+    new THREE.PlaneGeometry(160, 160),
+    new THREE.MeshLambertMaterial({ color: 0x252520 }),
   );
-  pad.position.y = 0.125;
+  apron.rotation.x = -Math.PI / 2;
+  apron.position.y = 0.01;
+  scene.add(apron);
+}
+
+// KSC Landing Zone 1 — SpaceX RTLS pad
+{
+  const concreteMat = new THREE.MeshLambertMaterial({ color: 0x2e2e2b });
+  const whiteMat    = new THREE.MeshBasicMaterial({ color: 0xddddcc, side: THREE.DoubleSide });
+  const yellowMat   = new THREE.MeshBasicMaterial({ color: 0xd4a017, side: THREE.DoubleSide });
+
+  // Pad surface
+  const pad = new THREE.Mesh(new THREE.CylinderGeometry(18, 18, 0.2, 48), concreteMat);
+  pad.position.y = 0.1;
   pad.receiveShadow = true;
   scene.add(pad);
 
-  const ring = new THREE.Mesh(
-    new THREE.RingGeometry(6.5, 7.2, 32),
-    new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide }),
+  // Outer ring stripe
+  const outerRing = new THREE.Mesh(
+    new THREE.RingGeometry(16.5, 18.2, 48),
+    whiteMat,
   );
-  ring.rotation.x = -Math.PI / 2;
-  ring.position.y = 0.26;
-  scene.add(ring);
+  outerRing.rotation.x = -Math.PI / 2;
+  outerRing.position.y = 0.22;
+  scene.add(outerRing);
 
-  [0, Math.PI / 2].forEach(a => {
-    const arm = new THREE.Mesh(
-      new THREE.BoxGeometry(11, 0.05, 0.4),
-      new THREE.MeshBasicMaterial({ color: 0xffffff }),
+  // Inner target circle
+  const innerRing = new THREE.Mesh(
+    new THREE.RingGeometry(5.5, 6.5, 48),
+    yellowMat,
+  );
+  innerRing.rotation.x = -Math.PI / 2;
+  innerRing.position.y = 0.22;
+  scene.add(innerRing);
+
+  // SpaceX X marking — two crossing bars
+  [-Math.PI / 4, Math.PI / 4].forEach(a => {
+    const bar = new THREE.Mesh(
+      new THREE.PlaneGeometry(22, 2.2),
+      yellowMat,
     );
-    arm.rotation.y = a;
-    arm.position.y = 0.27;
-    scene.add(arm);
+    bar.rotation.x = -Math.PI / 2;
+    bar.rotation.z = a;
+    bar.position.y = 0.22;
+    scene.add(bar);
   });
+
+  // Compass tick marks
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2;
+    const tick = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 3), whiteMat);
+    tick.rotation.x = -Math.PI / 2;
+    tick.rotation.z = angle;
+    tick.position.set(Math.sin(angle) * 14, 0.22, Math.cos(angle) * 14);
+    scene.add(tick);
+  }
+}
+
+// ── KSC Environment ───────────────────────────────────────────────────────────
+
+// Horizon glow — light pollution from the facility
+{
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0x1a2a1a, transparent: true, opacity: 0.5,
+    side: THREE.BackSide,
+  });
+  const glowDome = new THREE.Mesh(new THREE.SphereGeometry(1800, 32, 8, 0, Math.PI * 2, 0, 0.3), glowMat);
+  scene.add(glowDome);
+}
+
+// Florida treeline — scrub pine silhouettes ringing the pad
+{
+  const treeMat  = new THREE.MeshBasicMaterial({ color: 0x060c06 });
+  const trunkMat = new THREE.MeshBasicMaterial({ color: 0x050905 });
+  const rng = (a, b) => a + Math.random() * (b - a);
+
+  for (let i = 0; i < 320; i++) {
+    const angle  = rng(0, Math.PI * 2);
+    const dist   = rng(230, 420);
+    const x      = Math.cos(angle) * dist;
+    const z      = Math.sin(angle) * dist;
+    const h      = rng(12, 32);
+    const isPalm = Math.random() < 0.2;
+
+    if (isPalm) {
+      // Slender palm trunk
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.5, h * 0.85, 5), trunkMat);
+      trunk.position.set(x, h * 0.425, z);
+      scene.add(trunk);
+      // Palm canopy — flat wide cone
+      const canopy = new THREE.Mesh(new THREE.ConeGeometry(rng(4, 7), h * 0.2, 6), treeMat);
+      canopy.position.set(x, h * 0.85 + h * 0.1, z);
+      scene.add(canopy);
+    } else {
+      // Florida scrub pine — tall narrow cone
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.6, h * 0.35, 5), trunkMat);
+      trunk.position.set(x, h * 0.175, z);
+      scene.add(trunk);
+      const canopy = new THREE.Mesh(new THREE.ConeGeometry(rng(2.5, 4.5), h * 0.72, 6), treeMat);
+      canopy.position.set(x, h * 0.35 + h * 0.36, z);
+      scene.add(canopy);
+    }
+  }
+}
+
+// Vehicle Assembly Building (VAB) silhouette — NW of LZ-1, ~5 km away
+{
+  const silMat = new THREE.MeshBasicMaterial({ color: 0x090d12 });
+
+  // Main VAB box
+  const vab = new THREE.Mesh(new THREE.BoxGeometry(55, 110, 45), silMat);
+  vab.position.set(-320, 55, -480);
+  scene.add(vab);
+
+  // Smaller adjacent structure (Low Bay)
+  const lowBay = new THREE.Mesh(new THREE.BoxGeometry(35, 55, 40), silMat);
+  lowBay.position.set(-370, 27, -475);
+  scene.add(lowBay);
+
+  // Launch Control Centre
+  const lcc = new THREE.Mesh(new THREE.BoxGeometry(50, 28, 28), silMat);
+  lcc.position.set(-240, 14, -440);
+  scene.add(lcc);
+}
+
+// Floodlight towers around the pad
+{
+  const towerMat = new THREE.MeshLambertMaterial({ color: 0x303030 });
+  const armMat   = new THREE.MeshBasicMaterial({ color: 0x252525 });
+  const floodPositions = [[-55, -55], [55, -55], [-55, 55], [55, 55]];
+
+  floodPositions.forEach(([tx, tz]) => {
+    // Tower mast
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.7, 28, 6), towerMat);
+    mast.position.set(tx, 14, tz);
+    scene.add(mast);
+
+    // Horizontal arm
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(6, 0.5, 0.5), armMat);
+    arm.position.set(tx, 28.5, tz);
+    scene.add(arm);
+
+    // Warm floodlight
+    const flood = new THREE.PointLight(0xfff5d0, 1.2, 160);
+    flood.position.set(tx, 30, tz);
+    scene.add(flood);
+  });
+}
+
+// Banana River — flat dark water plane to the east
+{
+  const waterMat = new THREE.MeshLambertMaterial({ color: 0x06100e, transparent: true, opacity: 0.85 });
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(800, 600), waterMat);
+  water.rotation.x = -Math.PI / 2;
+  water.position.set(500, 0.05, 100);
+  scene.add(water);
 }
 
 // ── Materials ─────────────────────────────────────────────────────────────────
