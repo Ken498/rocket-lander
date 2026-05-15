@@ -29,7 +29,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["physics"]
+packages = ["physics", "viz"]
 
 [tool.ruff]
 line-length = 100
