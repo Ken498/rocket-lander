@@ -23,22 +23,22 @@ import numpy as np
 from .state import State
 
 GRAVITY = 9.81  # m/s²
-G0 = 9.81       # standard gravity used in Isp → mass-flow conversion
+G0 = 9.81  # standard gravity used in Isp → mass-flow conversion
 
 
 @dataclass
 class RocketParams:
     """Physical constants that define the rocket."""
 
-    dry_mass: float = 100.0    # kg  — mass when tank is empty
+    dry_mass: float = 100.0  # kg  — mass when tank is empty
     body_length: float = 20.0  # m   — used for thin-rod moment of inertia
-    nozzle_arm: float = 10.0   # m   — distance from COM to nozzle
-    isp: float = 300.0         # s   — specific impulse
+    nozzle_arm: float = 10.0  # m   — distance from COM to nozzle
+    isp: float = 300.0  # s   — specific impulse
 
 
 def _inertia(m: float, params: RocketParams) -> float:
     """Moment of inertia: thin-rod approximation, I = m * L² / 12."""
-    return m * params.body_length ** 2 / 12.0
+    return m * params.body_length**2 / 12.0
 
 
 def _derivatives(
