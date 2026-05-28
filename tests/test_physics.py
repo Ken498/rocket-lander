@@ -12,6 +12,7 @@ Tests
 4. Hover equilibrium: T = m·g → ay ≈ 0
 5. Angular momentum conserved when gimbal = 0 (no torque → ω constant)
 6. Dry-mass clamp: mass never drops below dry_mass
+7. PID landing: from 1 km altitude + 50 m offset, lands within 1 m at vy < 2 m/s
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from physics.controller import PIDGains, RocketPID
 from physics.rocket import GRAVITY, G0, Rocket, RocketParams
 from physics.state import State
 
@@ -211,3 +213,67 @@ class TestDryMassClamp:
             assert rocket.state.m >= dry - 1e-9, (
                 f"mass dropped to {rocket.state.m:.6f} kg, below dry_mass={dry}"
             )
+
+
+# ---------------------------------------------------------------------------
+# 7 — PID landing performance (Week 3 spec)
+# ---------------------------------------------------------------------------
+
+class TestPIDLanding:
+    """
+    End-to-end autopilot test.
+
+    Spec (project plan Week 3):
+        Starting condition: y0 = 1000 m, x0 = ±50 m, at rest, upright.
+        Pass criteria:     |x_touchdown| < 1 m  AND  vy_touchdown > -2 m/s.
+
+    Controller: RocketPID with recommended gains from controller.py docstring.
+    Simulation: dt = 1/60 s, max 300 s (18 000 steps) — rocket always lands
+    well before that with a working controller.
+    """
+
+    DT = 1.0 / 60.0
+    MAX_STEPS = 18_000          # 300 s — generous timeout
+    MAX_LANDING_X = 1.0         # m
+    MAX_LANDING_VY = -2.0       # m/s  (negative = downward; must be > this)
+
+    # Recommended gains from the RocketPID docstring.
+    ALTITUDE_GAINS = PIDGains(kp=500, ki=50, kd=100)
+    ATTITUDE_GAINS = PIDGains(kp=5000, ki=0, kd=1000)
+
+    def _land(self, x0: float) -> tuple[float, float]:
+        """
+        Simulate a landing from (x0, y0=1000 m) and return (x_final, vy_final).
+
+        Initial mass 1000 kg = 900 kg propellant + 100 kg dry mass.
+        kd_x=0.6 is the tuned default that achieves <1 m landing error at this mass.
+        """
+        params = RocketParams(dry_mass=100.0, body_length=20.0, nozzle_arm=10.0, isp=300.0)
+        state = State(x=x0, y=1000.0, vx=0.0, vy=0.0, theta=0.0, omega=0.0, m=1000.0)
+        rocket = Rocket(state, params)
+
+        controller = RocketPID(
+            altitude_gains=self.ALTITUDE_GAINS,
+            attitude_gains=self.ATTITUDE_GAINS,
+            kd_x=0.6,
+        )
+        controller.reset()
+
+        for _ in range(self.MAX_STEPS):
+            cmd = controller.update(rocket.state, target_altitude=0.0, dt=self.DT)
+            rocket.step(self.DT, thrust=cmd.thrust, gimbal=cmd.gimbal)
+            if rocket.state.y <= 0.0:
+                break
+
+        return rocket.state.x, rocket.state.vy
+
+    @pytest.mark.parametrize("x0", [50.0, -50.0])
+    def test_lands_within_1m_at_under_2ms(self, x0: float) -> None:
+        """From ±50 m offset at 1 km: touchdown within 1 m, vy > −2 m/s."""
+        x_final, vy_final = self._land(x0)
+        assert abs(x_final) < self.MAX_LANDING_X, (
+            f"x0={x0} m: landed at x={x_final:.2f} m, outside ±{self.MAX_LANDING_X} m"
+        )
+        assert vy_final > self.MAX_LANDING_VY, (
+            f"x0={x0} m: touchdown vy={vy_final:.2f} m/s, harder than {self.MAX_LANDING_VY} m/s"
+        )

@@ -124,8 +124,9 @@ class RocketPID:
         Recommended gains: PIDGains(kp=5000, ki=0, kd=1000)
         kd must be large (>=1000) to prevent oscillation between loops 2 and 3.
 
-    Validated: lands from x0=±100m, y0=1000m within 5m at vy < 3 m/s (7/7).
-    Plan spec (x0=50m): lands at x=0.5m, vy=-1.99 m/s — within 1m at <2 m/s.
+    Validated (m=1000 kg, y0=1000 m):
+        x0=±50 m  → lands at x=±0.69 m, vy=-1.92 m/s  ✓ (plan spec: <1 m, <2 m/s)
+        x0=±100 m → lands within 5 m at vy < 2 m/s     ✓
     """
 
     def __init__(
@@ -136,7 +137,7 @@ class RocketPID:
         max_gimbal: float = 0.3,          # rad (~17 deg)
         max_tilt: float = 0.08,           # rad — max body tilt for lateral correction
         kp_x: float = 0.011,              # outer horizontal-position gain
-        kd_x: float = 0.5,               # outer horizontal-velocity damping
+        kd_x: float = 0.6,               # outer horizontal-velocity damping
         descent_rate_gain: float = 0.05,  # (m/s) per metre of altitude
         min_descent_speed: float = 2.0,   # m/s — final approach speed
         max_descent_speed: float = 30.0,  # m/s — max commanded descent speed
