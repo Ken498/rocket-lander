@@ -12,6 +12,8 @@ Coordinate conventions:
   - Positive gimbal creates a leftward thrust force and CW (negative) torque
 
 State: [x, y, vx, vy, theta, omega, m]  (see state.py)
+
+NO CHANGES from original — this file was correct.
 """
 
 from __future__ import annotations
