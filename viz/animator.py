@@ -1,163 +1,124 @@
-"""
-Matplotlib animation utility for 2D rocket states.
+"""Matplotlib animation for the 2D rocket simulator.
 
-API:
-    animate(states, dt=1/60)              # play live
-    animate(states, dt=1/60, save="x.gif") # render to file
-
-`states` is any iterable of State objects (see physics/state.py). The
-animation draws the rocket as a rotated rectangle plus a thrust-vector
-arrow placeholder, with a ground line at y=0 and a small landing pad
-at the origin.
-
-This is intentionally minimal. Phase 2 swaps the whole thing for Three.js.
+Consumes a sequence of `physics.State` objects and renders the rocket as a
+rotating rectangle with a HUD panel beside the plot.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.animation import FuncAnimation
-from matplotlib.patches import Rectangle
+from matplotlib.patches import Polygon
 
-from physics.state import State
-
-# Visual constants — purely cosmetic, tweak freely.
-ROCKET_HEIGHT = 8.0  # m, for rendering only
-ROCKET_WIDTH = 1.2  # m, for rendering only
-PAD_WIDTH = 6.0  # m
-GROUND_COLOR = "#3a3a3a"
-ROCKET_COLOR = "#dddddd"
-PAD_COLOR = "#888888"
-SKY_TOP = "#0a1628"
-SKY_BOTTOM = "#1a3550"
+from physics import State
 
 
-def _rocket_corners(state: State) -> np.ndarray:
-    """Return the 4 corners of the rocket rectangle, rotated by theta about its base."""
-    w, h = ROCKET_WIDTH, ROCKET_HEIGHT
-    # Rocket coords with origin at the base (between the legs)
+def _rocket_corners(
+    x: float,
+    y: float,
+    theta: float,
+    width: float = 2.0,
+    height: float = 20.0,
+) -> np.ndarray:
+    """4 world-frame corners of the rocket rectangle.
+
+    Rocket points up along +y in its body frame; theta > 0 is CCW.
+    """
+    half_w, half_h = width / 2.0, height / 2.0
     local = np.array(
         [
-            [-w / 2, 0],
-            [w / 2, 0],
-            [w / 2, h],
-            [-w / 2, h],
+            [-half_w, -half_h],
+            [half_w, -half_h],
+            [half_w, half_h],
+            [-half_w, half_h],
         ]
     )
-    c, s = np.cos(state.theta), np.sin(state.theta)
+    c, s = np.cos(theta), np.sin(theta)
     rot = np.array([[c, -s], [s, c]])
-    world = (rot @ local.T).T + np.array([state.x, state.y])
-    return world
+    return (local @ rot.T) + np.array([x, y])
 
 
-def animate(
+def animate_rocket(
     states: Sequence[State],
-    dt: float = 1.0 / 60.0,
-    save: str | Path | None = None,
-    figsize: tuple[float, float] = (6, 8),
-    xlim: tuple[float, float] = (-50, 50),
-    ylim: tuple[float, float] = (0, 120),
+    dt: float,
+    xlim: tuple[float, float] = (-50.0, 50.0),
+    ylim: tuple[float, float] = (0.0, 1100.0),
+    rocket_width: float = 2.0,
+    rocket_height: float = 20.0,
+    title: str = "Rocket — Week 1 free-fall",
+    equal_aspect: bool = False,
 ) -> FuncAnimation:
-    """
-    Animate a sequence of rocket states.
+    """Animate a trajectory of `State` objects.
 
-    Parameters
-    ----------
-    states : sequence of State
-        Trajectory to play back. One frame per state.
-    dt : float
-        Wall-clock seconds between frames. 1/60 → 60 fps.
-    save : str or Path, optional
-        If given, save to this path (`.gif` or `.mp4`). If None, show interactively.
-    figsize, xlim, ylim
-        Plot configuration; defaults work for a 100 m drop.
+    Args:
+        states: One State per timestep, in order.
+        dt: Physics timestep in seconds; sets playback speed.
+        xlim, ylim: Plot axis limits in meters.
+        rocket_width, rocket_height: Body dimensions in meters.
+        title: Plot title.
+        equal_aspect: If True, force 1 m of x to equal 1 m of y on screen
+            (physically accurate but tall scenes look narrow). Defaults to
+            False for Week 1 freefall; flip to True when the rocket starts
+            actually tilting in later phases.
 
-    Returns
-    -------
-    FuncAnimation
-        The animation object. Keep a reference to it or it'll get GC'd.
+    Returns:
+        The FuncAnimation. Caller should call plt.show().
     """
-    fig, ax = plt.subplots(figsize=figsize)
+    if len(states) == 0:
+        raise ValueError("states cannot be empty")
+
+    # Two-pane layout: rocket plot on left, HUD panel on right.
+    fig = plt.figure(figsize=(9, 8))
+    gs = fig.add_gridspec(1, 2, width_ratios=[2, 1], wspace=0.15)
+    ax = fig.add_subplot(gs[0, 0])
+    hud_ax = fig.add_subplot(gs[0, 1])
+    hud_ax.axis("off")
+
     ax.set_xlim(*xlim)
     ax.set_ylim(*ylim)
-    ax.set_aspect("equal")
-    ax.set_facecolor(SKY_BOTTOM)
-    fig.patch.set_facecolor(SKY_TOP)
-    ax.set_xlabel("x [m]", color="white")
-    ax.set_ylabel("y [m]", color="white")
-    ax.tick_params(colors="white")
-    for spine in ax.spines.values():
-        spine.set_color("white")
+    if equal_aspect:
+        ax.set_aspect("equal")
+    ax.set_xlabel("x (m)")
+    ax.set_ylabel("y (m)")
+    ax.set_title(title)
+    ax.grid(True, alpha=0.3)
+    ax.axhline(0, color="brown", linewidth=2)  # ground
 
-    # Ground
-    ax.axhline(0, color=GROUND_COLOR, linewidth=2, zorder=1)
-    # Landing pad
-    pad = Rectangle(
-        (-PAD_WIDTH / 2, -0.5),
-        PAD_WIDTH,
-        0.6,
-        facecolor=PAD_COLOR,
-        edgecolor="white",
-        zorder=2,
-    )
-    ax.add_patch(pad)
-
-    # Rocket polygon (we'll update its xy each frame)
-    rocket_poly = plt.Polygon(
-        _rocket_corners(states[0]),
+    s0 = states[0]
+    rocket_patch = Polygon(
+        _rocket_corners(s0.x, s0.y, s0.theta, rocket_width, rocket_height),
         closed=True,
-        facecolor=ROCKET_COLOR,
+        facecolor="gray",
         edgecolor="black",
-        zorder=3,
     )
-    ax.add_patch(rocket_poly)
+    ax.add_patch(rocket_patch)
 
-    # HUD text
-    hud = ax.text(
-        0.02,
-        0.97,
+    hud = hud_ax.text(
+        0.0,
+        0.95,
         "",
-        transform=ax.transAxes,
-        color="white",
+        transform=hud_ax.transAxes,
+        va="top",
+        ha="left",
         family="monospace",
-        verticalalignment="top",
-        fontsize=10,
+        fontsize=11,
     )
 
     def update(frame: int):
         s = states[frame]
-        rocket_poly.set_xy(_rocket_corners(s))
-        speed = np.hypot(s.vx, s.vy)
+        rocket_patch.set_xy(_rocket_corners(s.x, s.y, s.theta, rocket_width, rocket_height))
+        t = frame * dt
         hud.set_text(
-            f"t = {frame * dt:5.2f} s\n"
-            f"alt = {s.y:6.1f} m\n"
-            f"v   = {speed:5.1f} m/s\n"
-            f"θ   = {np.degrees(s.theta):+5.1f}°\n"
-            f"m   = {s.m:6.1f} kg"
+            f"t     = {t:6.2f} s\n"
+            f"y     = {s.y:8.2f} m\n"
+            f"vy    = {s.vy:8.2f} m/s\n"
+            f"theta = {np.degrees(s.theta):6.1f} deg\n"
+            f"mass  = {s.m:8.1f} kg"
         )
-        return rocket_poly, hud
+        return rocket_patch, hud
 
-    anim = FuncAnimation(
-        fig,
-        update,
-        frames=len(states),
-        interval=dt * 1000,
-        blit=True,
-        repeat=False,
-    )
-
-    if save is not None:
-        save_path = Path(save)
-        if save_path.suffix == ".gif":
-            anim.save(save_path, writer="pillow", fps=int(1 / dt))
-        else:
-            anim.save(save_path, fps=int(1 / dt))
-        plt.close(fig)
-    else:
-        plt.show()
-
-    return anim
+    interval_ms = max(1, int(dt * 1000))
+    return FuncAnimation(fig, update, frames=len(states), interval=interval_ms, blit=False)

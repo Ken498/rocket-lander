@@ -1,38 +1,49 @@
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
 [project]
 name = "rocket-lander"
 version = "0.1.0"
-description = "Landing Simulation"
-requires-python = ">=3.11"
+description = "Self-landing rocket simulator with 6-DOF dynamics and MPC autopilot"
 readme = "README.md"
-
+requires-python = ">=3.11"
+license = {text = "MIT"}
 authors = [
     { name = "Ken" },
+    { name = "Den"}
 ]
-
 dependencies = [
     "numpy>=1.26",
-    "scipy>=1.11",
+    "scipy>=1.12",
     "matplotlib>=3.8",
 ]
 
-[tool.hatch.build.targets.wheel]
-packages = ["physics", "viz", "web"]
-
-[project.scripts]
-rocket-server = "web.server:main"
-
 [project.optional-dependencies]
-web = [
-    "fastapi>=0.100",
-    "uvicorn[standard]>=0.23",
-]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=4.1",
-    "black>=24.0",
     "ruff>=0.5",
     "pre-commit>=3.7",
+    "ipykernel>=6.29",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["physics", "viz"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "N", "UP", "B", "NPY"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+addopts = "-v --tb=short"

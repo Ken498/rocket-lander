@@ -11,5 +11,4 @@ build/
 .coverage
 htmlcov/
 
-*.gif
 *.mp4

@@ -1,5 +1,5 @@
-"""Visualization package: 2D matplotlib animator (Phase 1) → Three.js (Phase 2)."""
+"""Visualization utilities for the rocket simulator."""
 
-from .animator import animate
+from viz.animator import animate_rocket
 
-__all__ = ["animate"]
+__all__ = ["animate_rocket"]
