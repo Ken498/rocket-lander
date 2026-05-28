@@ -112,11 +112,12 @@ class TestTsiolkovsky:
         self,
         m0: float = 1000.0,
         dry_mass: float = 100.0,
-        thrust: float = 5000.0,
+        thrust: float = 981_000.0,  # T/W = 100 → burn ~2.7 s → gravity loss < 0.5 %
         isp: float = 300.0,
     ) -> tuple[float, float]:
         params = RocketParams(dry_mass=dry_mass, isp=isp)
-        # Very high altitude so gravity effect on Δv is negligible
+        # High T/W ratio makes the burn short (~2.7 s), so gravity losses are
+        # negligible (<0.5 %) and Δv_sim ≈ Isp·g0·ln(m0/mf) within 1 %.
         state = State(x=0, y=1e6, vx=0, vy=0, theta=0, omega=0, m=m0)
         rocket = Rocket(state, params)
 
