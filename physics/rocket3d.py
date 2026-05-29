@@ -148,7 +148,10 @@ def _derivatives3d(
     R = _quat_to_rot(q_arr)
 
     # Thrust vector in body frame (small-angle gimbal).
-    F_body = np.array([T * gimbal_yaw, T, T * gimbal_pitch])
+    # Sign convention: positive gimbal deflects nozzle, creating a NEGATIVE
+    # horizontal force in that plane — matching the 2D convention where
+    # ax = -T·sin(γ)/m ≈ -g·γ.  This ensures the LQR gain signs are consistent.
+    F_body = np.array([-T * gimbal_yaw, T, -T * gimbal_pitch])
 
     # Rotate to world frame, add gravity on y.
     F_world = R @ F_body
@@ -160,11 +163,12 @@ def _derivatives3d(
     # ── Rotational dynamics (Euler's equations in body frame) ─────────
     L = params.nozzle_arm
     # τ = r_nozzle × F_body  with  r_nozzle = [0, -L, 0]
-    # Cross product gives: τ = T · [-L·γp, 0, L·γy]
+    # F_body = T·[-γy, 1, -γp]
+    # Cross product gives: τ = T · [L·γp, 0, -L·γy]
     tau = np.array([
-        -L * T * gimbal_pitch,
+         L * T * gimbal_pitch,
          0.0,
-         L * T * gimbal_yaw,
+        -L * T * gimbal_yaw,
     ])
 
     # Diagonal inertia tensor (body frame).
