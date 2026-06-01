@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rocket Lander 3D</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+  #canvas-container { width: 100vw; height: 100vh; }
+
+  /* ── HUD ── */
+  #hud {
+    position: fixed; top: 16px; left: 16px;
+    color: #00ff88; font-size: 13px; line-height: 1.7;
+    text-shadow: 0 0 8px #00ff88;
+    pointer-events: none; z-index: 10;
+    background: rgba(0,0,0,0.45); padding: 12px 16px; border-radius: 6px;
+    border: 1px solid rgba(0,255,136,0.25);
+    min-width: 220px;
+  }
+  #hud .label { color: #88ffcc; font-size: 11px; }
+  #hud .warn  { color: #ffcc00; }
+  #hud .crit  { color: #ff4444; }
+
+  /* ── Playback bar ── */
+  #playbar {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 12px;
+    background: rgba(0,0,0,0.65); border: 1px solid rgba(255,255,255,0.15);
+    padding: 10px 20px; border-radius: 32px; z-index: 10;
+    color: #ccc; font-size: 12px;
+  }
+  #playbar button {
+    background: rgba(0,255,136,0.15); border: 1px solid #00ff88;
+    color: #00ff88; padding: 4px 14px; border-radius: 16px; cursor: pointer;
+    font-family: inherit; font-size: 13px;
+    transition: background 0.15s;
+  }
+  #playbar button:hover { background: rgba(0,255,136,0.35); }
+  #scrubber {
+    width: 320px; accent-color: #00ff88; cursor: pointer;
+  }
+  #time-label { min-width: 60px; text-align: right; }
+
+  /* ── Mode badge ── */
+  #mode-badge {
+    position: fixed; top: 16px; right: 16px;
+    background: rgba(0,0,0,0.55); border: 1px solid rgba(0,255,136,0.3);
+    color: #00ff88; font-size: 11px; padding: 6px 12px; border-radius: 4px;
+    z-index: 10; text-shadow: 0 0 6px #00ff88;
+  }
+
+  /* ── Status overlay for live mode ── */
+  #status {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    color: #fff; font-size: 18px; background: rgba(0,0,0,0.7);
+    padding: 20px 32px; border-radius: 8px; z-index: 20;
+    display: none;
+  }
+</style>
+</head>
+<body>
+<div id="canvas-container"></div>
+
+<div id="hud">
+  <div class="label">ALTITUDE</div>
+  <div id="h-alt">— m</div>
+  <div class="label">VELOCITY</div>
+  <div id="h-vel">— m/s</div>
+  <div class="label">VERT SPEED</div>
+  <div id="h-vy">— m/s</div>
+  <div class="label">POSITION</div>
+  <div id="h-pos">—</div>
+  <div class="label">THRUST</div>
+  <div id="h-thrust">— N</div>
+  <div class="label">GIMBAL P/Y</div>
+  <div id="h-gimbal">— / — mrad</div>
+  <div class="label">MASS</div>
+  <div id="h-mass">— kg</div>
+  <div class="label">TIME</div>
+  <div id="h-time">— s</div>
+</div>
+
+<div id="mode-badge">REPLAY</div>
+<div id="status"></div>
+
+<div id="playbar">
+  <button id="btn-play">▶ PLAY</button>
+  <input id="scrubber" type="range" min="0" max="1000" value="0">
+  <span id="time-label">0.0 s</span>
+  <button id="btn-reset">↺</button>
+</div>
+
+<script type="module">
+// ─────────────────────────────────────────────────────────────────────────── //
+// Imports
+// ─────────────────────────────────────────────────────────────────────────── //
+import * as THREE from 'https://unpkg.com/three@0.128.0/build/three.module.js';
+import { OrbitControls } from 'https://unpkg.com/three@0.128.0/examples/jsm/controls/OrbitControls.js';
+
+// ─────────────────────────────────────────────────────────────────────────── //
+// Mode detection
+// ─────────────────────────────────────────────────────────────────────────── //
+const MODE = window.VIZ_MODE || 'replay';   // 'replay' | 'live'
+const TRAJ = window.TRAJECTORY || null;     // pre-embedded trajectory (replay mode)
+const WS_URL = window.WS_URL || 'ws://localhost:8765';
+
+// ─────────────────────────────────────────────────────────────────────────── //
+// Scene setup
+// ─────────────────────────────────────────────────────────────────────────── //
+const container = document.getElementById('canvas-container');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+container.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000008);
+scene.fog = new THREE.FogExp2(0x000010, 0.00015);
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.5, 50000);
+camera.position.set(120, 80, 120);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 10;
+controls.maxDistance = 8000;
+controls.target.set(0, 200, 0);
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ─────────────────────────────────────────────────────────────────────────── //
+// Lighting
+// ─────────────────────────────────────────────────────────────────────────── //
+const ambient = new THREE.AmbientLight(0x111133, 1.0);
+scene.add(ambient);
+
+const sun = new THREE.DirectionalLight(0xfff5e0, 1.8);
+sun.position.set(300, 800, 200);
+sun.castShadow = true;
+sun.shadow.camera.near = 1;
+sun.shadow.camera.far = 4000;
+sun.shadow.camera.left = -500;
+sun.shadow.camera.right = 500;
+sun.shadow.camera.top = 500;
+sun.shadow.camera.bottom = -500;
+sun.shadow.mapSize.set(2048, 2048);
+scene.add(sun);
+
+const fillLight = new THREE.DirectionalLight(0x4488ff, 0.4);
+fillLight.position.set(-200, 100, -200);
+scene.add(fillLight);
+
+// ─────────────────────────────────────────────────────────────────────────── //
+// Ground grid
+// ─────────────────────────────────────────────────────────────────────────── //
+const groundGeo = new THREE.PlaneGeometry(2000, 2000);
+const groundMat = new THREE.MeshStandardMaterial({
+  color: 0x1a1a2e, roughness: 0.95, metalness: 0.05
+});
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const grid = new THREE.GridHelper(2000, 100, 0x003333, 0x002222);
+grid.position.y = 0.05;
+scene.add(grid);
+
+// Landing pad
+const padGeo = new THREE.CylinderGeometry(15, 15, 0.3, 32);
+const padMat = new THREE.MeshStandardMaterial({ color: 0x334455, roughness: 0.7, metalness: 0.3 });
+const pad = new THREE.Mesh(padGeo, padMat);
+pad.position.set(0, 0.15, 0);
+pad.receiveShadow = true;
+scene.add(pad);
+
+// Pad cross
+const crossMat = new THREE.MeshStandardMaterial({ color: 0xffaa00, roughness: 0.8 });
+[-1, 1].forEach(sign => {
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(28, 0.1, 1.5), crossMat);
+  arm.position.set(0, 0.4, sign * 0.0);
+  arm.rotation.y = sign === 1 ? 0 : Math.PI / 2;
+  scene.add(arm);
+});
+
+// ─────────────────────────────────────────────────────────────────────────── //
+// Star field
+// ─────────────────────────────────────────────────────────────────────────── //
+(function buildStars() {
+  const N = 8000;
+  const pos = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    const phi   = Math.acos(2 * Math.random() - 1);
+    const theta = 2 * Math.PI * Math.random();
+    const r = 20000 + Math.random() * 5000;
+    pos[i*3]   = r * Math.sin(phi) * Math.cos(theta);
+    pos[i*3+1] = Math.abs(r * Math.cos(phi));   // upper hemisphere
+    pos[i*3+2] = r * Math.sin(phi) * Math.sin(theta);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const mat = new THREE.PointsMaterial({ color: 0xffffff, size: 3.5, sizeAttenuation: true });
+  scene.add(new THREE.Points(geo, mat));
+})();
+
+// ─────────────────────────────────────────────────────────────────────────── //
+// Rocket mesh
+// ─────────────────────────────────────────────────────────────────────────── //
+const rocketGroup = new THREE.Group();
+scene.add(rocketGroup);
+
+// Body — metallic cylinder
+const bodyGeo = new THREE.CylinderGeometry(1.0, 1.2, 20, 24);
+const bodyMat = new THREE.MeshStandardMaterial({
+  color: 0xe8e8e8, roughness: 0.25, metalness: 0.85,
+  envMapIntensity: 1.0,
+});
+const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+bodyMesh.position.y = 10;   // centre at y=10 so base is at y=0
+bodyMesh.castShadow = true;
+rocketGroup.add(bodyMesh);
+
+// Nose cone
+const noseGeo = new THREE.ConeGeometry(1.0, 5, 24);
+const noseMat = new THREE.MeshStandardMaterial({ color: 0xdd3333, roughness: 0.3, metalness: 0.7 });
+const noseMesh = new THREE.Mesh(noseGeo, noseMat);
+noseMesh.position.y = 22.5;
+noseMesh.castShadow = true;
+rocketGroup.add(noseMesh);
+
+// Grid fins (4 × small flat rectangles near top of body)
+const finMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.5, metalness: 0.6 });
+for (let i = 0; i < 4; i++) {
+  const finGeo = new THREE.BoxGeometry(0.2, 3, 2.5);
+  const fin = new THREE.Mesh(finGeo, finMat);
+  const ang = (i / 4) * Math.PI * 2;
+  fin.position.set(Math.cos(ang) * 1.3, 17, Math.sin(ang) * 1.3);
+  fin.rotation.y = ang;
+  fin.castShadow = true;
+  rocketGroup.add(fin);
+}
+
+// Landing legs (4 legs, deployed always for simplicity)
+const legMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.6, metalness: 0.5 });
+const legAngles = [0, Math.PI/2, Math.PI, 3*Math.PI/2];
+legAngles.forEach(ang => {
+  const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 7, 6), legMat);
+  upper.position.set(Math.cos(ang) * 2.5, 2, Math.sin(ang) * 2.5);
+  upper.rotation.z = -Math.cos(ang) * 0.55;
+  upper.rotation.x =  Math.sin(ang) * 0.55;
+  upper.castShadow = true;
+  rocketGroup.add(upper);
+
+  const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 3, 6), legMat);
+  foot.position.set(Math.cos(ang) * 5.2, 0.5, Math.sin(ang) * 5.2);
+  foot.castShadow = true;
+  rocketGroup.add(foot);
+});
+
+// Nozzle bell
+const nozzleGeo = new THREE.CylinderGeometry(0.9, 1.5, 1.8, 16, 1, true);
+const nozzleMat = new THREE.MeshStandardMaterial({
+  color: 0x554433, roughness: 0.4, metalness: 0.9, side: THREE.DoubleSide
+});
+const nozzleMesh = new THREE.Mesh(nozzleGeo, nozzleMat);
+nozzleMesh.position.y = -1.0;
+rocketGroup.add(nozzleMesh);
+
+// Engine glow (PointLight + emissive sphere inside nozzle)
+const engineGlow = new THREE.PointLight(0xff6600, 0, 80);
+engineGlow.position.set(0, -2, 0);
+rocketGroup.add(engineGlow);
+
+const glowSphere = new THREE.Mesh(
+  new THREE.SphereGeometry(0.8, 12, 12),
+  new THREE.MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0 })
+);
+glowSphere.position.y = -1.8;
+rocketGroup.add(glowSphere);
+
+// Trail line (path history)
+const MAX_TRAIL = 1200;
+const trailPositions = new Float32Array(MAX_TRAIL * 3);
+const trailGeo = new THREE.BufferGeometry();
+trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+trailGeo.setDrawRange(0, 0);
+const trailMat = new THREE.LineBasicMaterial({ color: 0x0088ff, transparent: true, opacity: 0.5 });
+const trailLine = new THREE.Line(trailGeo, trailMat);
+scene.add(trailLine);
+
+// ─────────────────────────────────────────────────────────────────────────── //
+// Exhaust particles
+// ─────────────────────────────────────────────────────────────────────────── //
+const PARTICLE_COUNT = 220;
+const pPositions = new Float32Array(PARTICLE_COUNT * 3);
+const pVelocities = [];
+const pLifetimes  = new Float32Array(PARTICLE_COUNT);
+const pMaxLife    = new Float32Array(PARTICLE_COUNT);
+for (let i = 0; i < PARTICLE_COUNT; i++) {
+  pLifetimes[i] = 0;
+  pMaxLife[i]   = 0.3 + Math.random() * 0.5;
+  pVelocities.push(new THREE.Vector3());
+  pPositions[i*3]   = 0;
+  pPositions[i*3+1] = -3000;  // hide off-screen initially
+  pPositions[i*3+2] = 0;
+}
+const particleGeo = new THREE.BufferGeometry();
+particleGeo.setAttribute('position', new THREE.BufferAttribute(pPositions, 3));
+const particleMat = new THREE.PointsMaterial({
+  color: 0xff9900, size: 2.0, sizeAttenuation: true,
+  transparent: true, opacity: 0.75, depthWrite: false,
+});
+const particles = new THREE.Points(particleGeo, particleMat);
+scene.add(particles);
+
+// ─────────────────────────────────────────────────────────────────────────── //
+// HUD helpers
+// ─────────────────────────────────────────────────────────────────────────── //
+const hudAlt    = document.getElementById('h-alt');
+const hudVel    = document.getElementById('h-vel');
+const hudVy     = document.getElementById('h-vy');
+const hudPos    = document.getElementById('h-pos');
+const hudThrust = document.getElementById('h-thrust');
+const hudGimbal = document.getElementById('h-gimbal');
+const hudMass   = document.getElementById('h-mass');
+const hudTime   = document.getElementById('h-time');
+
+function updateHUD(f) {
+  hudAlt.textContent    = `${f.altitude.toFixed(1)} m`;
+  hudVel.textContent    = `${f.speed.toFixed(2)} m/s`;
+
+  const vy = f.vy;
+  hudVy.textContent = `${vy.toFixed(2)} m/s`;
+  hudVy.className   = vy < -5 ? 'crit' : vy < -2 ? 'warn' : '';
+
+  hudPos.textContent    = `(${f.x.toFixed(1)}, ${f.z.toFixed(1)})`;
+  hudThrust.textContent = `${f.thrust.toFixed(0)} N`;
+  hudGimbal.textContent = `${(f.gimbal_pitch*1000).toFixed(1)} / ${(f.gimbal_yaw*1000).toFixed(1)} mrad`;
+  hudMass.textContent   = `${f.m.toFixed(1)} kg`;
+  hudTime.textContent   = `${f.t.toFixed(1)} s`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────── //
+// Apply a trajectory frame to the scene
+// ─────────────────────────────────────────────────────────────────────────── //
+let trailHead = 0;
+let trailCount = 0;
+
+function applyFrame(f) {
+  // Position: Three.js Y=up matches simulation Y=up
+  rocketGroup.position.set(f.x, f.y, f.z);
+
+  // Attitude: quaternion scalar-first [q0,q1,q2,q3] → THREE.Quaternion(x,y,z,w)
+  rocketGroup.quaternion.set(f.q1, f.q2, f.q3, f.q0);
+
+  // Engine glow proportional to thrust
+  const thrustFrac = Math.min(f.thrust / 15000, 1.0);
+  engineGlow.intensity = thrustFrac * 6.0;
+  glowSphere.material.opacity = thrustFrac * 0.9;
+
+  // Trail
+  const idx = trailHead * 3;
+  trailPositions[idx]   = f.x;
+  trailPositions[idx+1] = f.y;
+  trailPositions[idx+2] = f.z;
+  trailHead = (trailHead + 1) % MAX_TRAIL;
+  trailCount = Math.min(trailCount + 1, MAX_TRAIL);
+  trailGeo.attributes.position.needsUpdate = true;
+  trailGeo.setDrawRange(0, trailCount);
+
+  updateHUD(f);
+}
+
+// ─────────────────────────────────────────────────────────────────────────── //
+// Particle system update
+// ─────────────────────────────────────────────────────────────────────────── //
+let spawnTimer = 0;
+
+function updateParticles(dt, rocketPos, thrustOn) {
+  spawnTimer += dt;
+  const SPAWN_INTERVAL = 0.012;
+
+  // Nozzle world position
+  const nozzleLocal = new THREE.Vector3(0, -1.8, 0);
+  const nozzleWorld = nozzleLocal.applyQuaternion(rocketGroup.quaternion).add(rocketPos);
+
+  if (thrustOn && spawnTimer >= SPAWN_INTERVAL) {
+    spawnTimer = 0;
+    // Spawn a few particles
+    for (let k = 0; k < 5; k++) {
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
+        if (pLifetimes[i] <= 0) {
+          pLifetimes[i] = pMaxLife[i];
+          pPositions[i*3]   = nozzleWorld.x + (Math.random()-0.5) * 0.5;
+          pPositions[i*3+1] = nozzleWorld.y + (Math.random()-0.5) * 0.5;
+          pPositions[i*3+2] = nozzleWorld.z + (Math.random()-0.5) * 0.5;
+          // Exhaust velocity: downward in rocket frame, spread
+          const exhaustDir = new THREE.Vector3(
+            (Math.random()-0.5)*4,
+            -18 - Math.random()*8,
+            (Math.random()-0.5)*4
+          ).applyQuaternion(rocketGroup.quaternion);
+          pVelocities[i].copy(exhaustDir);
+          break;
+        }
+      }
+    }
+  }
+
+  // Integrate
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    if (pLifetimes[i] > 0) {
+      pLifetimes[i] -= dt;
+      pPositions[i*3]   += pVelocities[i].x * dt;
+      pPositions[i*3+1] += pVelocities[i].y * dt;
+      pPositions[i*3+2] += pVelocities[i].z * dt;
+      // Fade by dragging velocity
+      pVelocities[i].multiplyScalar(0.96);
+      if (pLifetimes[i] <= 0) {
+        pPositions[i*3+1] = -3000; // hide
+      }
+    }
+  }
+  particleGeo.attributes.position.needsUpdate = true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────── //
+// REPLAY mode
+// ─────────────────────────────────────────────────────────────────────────── //
+let playbackIdx = 0;
+let isPlaying   = false;
+let playbackStartWall = 0;
+let playbackStartSim  = 0;
+let trajectory = [];
+
+const scrubber  = document.getElementById('scrubber');
+const btnPlay   = document.getElementById('btn-play');
+const btnReset  = document.getElementById('btn-reset');
+const timeLabel = document.getElementById('time-label');
+const modeBadge = document.getElementById('mode-badge');
+
+function initReplay(traj) {
+  trajectory = traj;
+  document.getElementById('playbar').style.display = 'flex';
+
+  scrubber.addEventListener('input', () => {
+    const frac = scrubber.value / 1000;
+    playbackIdx = Math.floor(frac * (trajectory.length - 1));
+    trailHead = 0; trailCount = 0;
+    applyFrame(trajectory[playbackIdx]);
+    timeLabel.textContent = trajectory[playbackIdx].t.toFixed(1) + ' s';
+    isPlaying = false;
+    btnPlay.textContent = '▶ PLAY';
+  });
+
+  btnPlay.addEventListener('click', () => {
+    if (isPlaying) {
+      isPlaying = false;
+      btnPlay.textContent = '▶ PLAY';
+    } else {
+      if (playbackIdx >= trajectory.length - 1) {
+        playbackIdx = 0;
+        trailHead = 0; trailCount = 0;
+      }
+      isPlaying = true;
+      playbackStartWall = performance.now();
+      playbackStartSim  = trajectory[playbackIdx].t;
+      btnPlay.textContent = '⏸ PAUSE';
+    }
+  });
+
+  btnReset.addEventListener('click', () => {
+    isPlaying = false;
+    playbackIdx = 0;
+    trailHead = 0; trailCount = 0;
+    scrubber.value = 0;
+    btnPlay.textContent = '▶ PLAY';
+    applyFrame(trajectory[0]);
+  });
+
+  // Show first frame
+  applyFrame(trajectory[0]);
+  // Fit camera to trajectory altitude
+  const maxY = Math.max(...trajectory.map(f => f.y));
+  camera.position.set(maxY * 0.15, maxY * 0.08, maxY * 0.15);
+  controls.target.set(0, maxY * 0.3, 0);
+  controls.update();
+}
+
+function tickReplay(dt) {
+  if (!isPlaying || trajectory.length === 0) return;
+
+  const wallElapsed = (performance.now() - playbackStartWall) / 1000;
+  const simTarget   = playbackStartSim + wallElapsed;
+
+  // Advance playbackIdx to match real-time
+  while (
+    playbackIdx < trajectory.length - 1 &&
+    trajectory[playbackIdx + 1].t <= simTarget
+  ) {
+    playbackIdx++;
+  }
+
+  if (playbackIdx >= trajectory.length - 1) {
+    isPlaying = false;
+    btnPlay.textContent = '▶ PLAY';
+  }
+
+  const f = trajectory[playbackIdx];
+  applyFrame(f);
+  scrubber.value = Math.round((playbackIdx / (trajectory.length - 1)) * 1000);
+  timeLabel.textContent = f.t.toFixed(1) + ' s';
+
+  updateParticles(dt, rocketGroup.position.clone(), f.thrust > 100);
+}
+
+// ─────────────────────────────────────────────────────────────────────────── //
+// LIVE mode
+// ─────────────────────────────────────────────────────────────────────────── //
+let liveFrame = null;
+
+function initLive() {
+  document.getElementById('playbar').style.display = 'none';
+  modeBadge.textContent = 'LIVE';
+  modeBadge.style.color = '#ff4444';
+  modeBadge.style.borderColor = 'rgba(255,68,68,0.4)';
+  modeBadge.style.textShadow = '0 0 6px #ff4444';
+
+  const statusEl = document.getElementById('status');
+  statusEl.textContent = 'Connecting to simulation server…';
+  statusEl.style.display = 'block';
+
+  const ws = new WebSocket(WS_URL);
+  ws.onopen  = () => { statusEl.style.display = 'none'; };
+  ws.onclose = () => { statusEl.textContent = 'Server disconnected.'; statusEl.style.display = 'block'; };
+  ws.onerror = () => { statusEl.textContent = 'WebSocket error — is server3d.py running?'; statusEl.style.display = 'block'; };
+  ws.onmessage = (ev) => {
+    try { liveFrame = JSON.parse(ev.data); } catch (_) {}
+  };
+}
+
+function tickLive(dt) {
+  if (!liveFrame) return;
+  applyFrame(liveFrame);
+  updateParticles(dt, rocketGroup.position.clone(), liveFrame.thrust > 100);
+}
+
+// ─────────────────────────────────────────────────────────────────────────── //
+// Animation loop
+// ─────────────────────────────────────────────────────────────────────────── //
+let lastTime = performance.now();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  const dt  = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime  = now;
+
+  if (MODE === 'replay') tickReplay(dt);
+  else                   tickLive(dt);
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+// ─────────────────────────────────────────────────────────────────────────── //
+// Boot
+// ─────────────────────────────────────────────────────────────────────────── //
+if (MODE === 'live') {
+  initLive();
+} else if (TRAJ && TRAJ.length > 0) {
+  initReplay(TRAJ);
+} else {
+  // No data — show placeholder and await live connection attempt
+  document.getElementById('status').textContent = 'No trajectory data. Set window.VIZ_MODE="live" or embed trajectory.';
+  document.getElementById('status').style.display = 'block';
+}
+
+animate();
+</script>
+</body>
+</html>
