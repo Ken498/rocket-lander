@@ -41,25 +41,25 @@ class State3D:
     """Full 6-DOF state of the 3D rocket."""
 
     # ── Position (world frame) ────────────────────────────────────────
-    x: float = 0.0     # m — East
-    y: float = 0.0     # m — Up  (ground = 0)
-    z: float = 0.0     # m — South
+    x: float = 0.0  # m — East
+    y: float = 0.0  # m — Up  (ground = 0)
+    z: float = 0.0  # m — South
 
     # ── Velocity (world frame) ────────────────────────────────────────
-    vx: float = 0.0    # m/s
-    vy: float = 0.0    # m/s
-    vz: float = 0.0    # m/s
+    vx: float = 0.0  # m/s
+    vy: float = 0.0  # m/s
+    vz: float = 0.0  # m/s
 
     # ── Attitude quaternion (scalar-first, unit length) ───────────────
-    q0: float = 1.0    # scalar  — 1.0 means upright
+    q0: float = 1.0  # scalar  — 1.0 means upright
     q1: float = 0.0
     q2: float = 0.0
     q3: float = 0.0
 
     # ── Angular velocity (body frame) ─────────────────────────────────
-    omega_x: float = 0.0   # rad/s
-    omega_y: float = 0.0   # rad/s
-    omega_z: float = 0.0   # rad/s
+    omega_x: float = 0.0  # rad/s
+    omega_y: float = 0.0  # rad/s
+    omega_z: float = 0.0  # rad/s
 
     # ── Mass ──────────────────────────────────────────────────────────
     m: float = 1000.0  # kg — total (wet) mass
@@ -70,22 +70,40 @@ class State3D:
 
     def to_array(self) -> np.ndarray:
         """Pack into a length-14 float64 array."""
-        return np.array([
-            self.x,   self.y,   self.z,
-            self.vx,  self.vy,  self.vz,
-            self.q0,  self.q1,  self.q2,  self.q3,
-            self.omega_x, self.omega_y, self.omega_z,
-            self.m,
-        ], dtype=float)
+        return np.array(
+            [
+                self.x,
+                self.y,
+                self.z,
+                self.vx,
+                self.vy,
+                self.vz,
+                self.q0,
+                self.q1,
+                self.q2,
+                self.q3,
+                self.omega_x,
+                self.omega_y,
+                self.omega_z,
+                self.m,
+            ],
+            dtype=float,
+        )
 
     @classmethod
-    def from_array(cls, arr: np.ndarray) -> "State3D":
+    def from_array(cls, arr: np.ndarray) -> State3D:
         """Unpack a length-14 array into a State3D."""
         return cls(
-            x=float(arr[0]),  y=float(arr[1]),  z=float(arr[2]),
-            vx=float(arr[3]), vy=float(arr[4]), vz=float(arr[5]),
-            q0=float(arr[6]), q1=float(arr[7]),
-            q2=float(arr[8]), q3=float(arr[9]),
+            x=float(arr[0]),
+            y=float(arr[1]),
+            z=float(arr[2]),
+            vx=float(arr[3]),
+            vy=float(arr[4]),
+            vz=float(arr[5]),
+            q0=float(arr[6]),
+            q1=float(arr[7]),
+            q2=float(arr[8]),
+            q3=float(arr[9]),
             omega_x=float(arr[10]),
             omega_y=float(arr[11]),
             omega_z=float(arr[12]),

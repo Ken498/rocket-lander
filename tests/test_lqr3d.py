@@ -18,10 +18,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from physics.lqr3d import LQRController3D, LQRWeights3D, solve_lqr3d
+from physics.lqr3d import LQRController3D, solve_lqr3d
 from physics.rocket3d import GRAVITY, Rocket3D, RocketParams3D
 from physics.state3d import State3D
-
 
 # ──────────────────────────────────────────────────────────────────── #
 # Shared helpers                                                         #
@@ -46,6 +45,7 @@ def make_hover_state(**kwargs: float) -> State3D:
 # 1 — Gain matrix shape                                                 #
 # ──────────────────────────────────────────────────────────────────── #
 
+
 class TestGainShape:
     def test_K_shape(self) -> None:
         K = solve_lqr3d(DEFAULT_PARAMS, HOVER_MASS)
@@ -60,6 +60,7 @@ class TestGainShape:
 # 2 — Zero-error command at hover equilibrium                           #
 # ──────────────────────────────────────────────────────────────────── #
 
+
 class TestZeroErrorCommand:
     def test_hover_equilibrium(self) -> None:
         """At hover with zero error, T ≈ m·g and both gimbals ≈ 0."""
@@ -73,14 +74,13 @@ class TestZeroErrorCommand:
         assert abs(cmd.gimbal_pitch) < 1e-6, (
             f"gimbal_pitch = {cmd.gimbal_pitch:.2e} rad at equilibrium"
         )
-        assert abs(cmd.gimbal_yaw) < 1e-6, (
-            f"gimbal_yaw = {cmd.gimbal_yaw:.2e} rad at equilibrium"
-        )
+        assert abs(cmd.gimbal_yaw) < 1e-6, f"gimbal_yaw = {cmd.gimbal_yaw:.2e} rad at equilibrium"
 
 
 # ──────────────────────────────────────────────────────────────────── #
 # 3 — Attitude correction sign                                          #
 # ──────────────────────────────────────────────────────────────────── #
+
 
 class TestAttitudeCorrection:
     """
@@ -100,8 +100,7 @@ class TestAttitudeCorrection:
         """
         q = np.array([1.0, q1, 0.0, q3])
         q /= np.linalg.norm(q)
-        return State3D(y=1000.0, m=HOVER_MASS,
-                       q0=q[0], q1=q[1], q2=q[2], q3=q[3])
+        return State3D(y=1000.0, m=HOVER_MASS, q0=q[0], q1=q[1], q2=q[2], q3=q[3])
 
     def test_pitch_correction_sign(self) -> None:
         """δθ = 2·q3 > 0 → τ_z = -T·L·γ_yaw < 0 requires γ_yaw > 0 to restore."""
@@ -125,6 +124,7 @@ class TestAttitudeCorrection:
 # ──────────────────────────────────────────────────────────────────── #
 # 4 — Mass-scheduled recompute                                          #
 # ──────────────────────────────────────────────────────────────────── #
+
 
 class TestMassSchedule:
     def test_K_updates_on_mass_change(self) -> None:
@@ -163,6 +163,7 @@ class TestMassSchedule:
 # 5–7 — Closed-loop landing                                             #
 # ──────────────────────────────────────────────────────────────────── #
 
+
 class TestLanding3D:
     """
     End-to-end LQR landing from offsets in x and/or z at y0 = 1000 m.
@@ -188,12 +189,12 @@ class TestLanding3D:
     """
 
     DT = 1.0 / 60.0
-    MAX_STEPS = 18_000     # 300 s
-    MAX_LANDING_X = 2.0    # m
-    MAX_LANDING_Z = 2.0    # m
+    MAX_STEPS = 18_000  # 300 s
+    MAX_LANDING_X = 2.0  # m
+    MAX_LANDING_Z = 2.0  # m
     MAX_LANDING_VY = -2.0  # m/s
 
-    LAMBDA = 0.03          # horizontal convergence rate [1/s]
+    LAMBDA = 0.03  # horizontal convergence rate [1/s]
 
     def _land(
         self,
@@ -225,7 +226,7 @@ class TestLanding3D:
             cmd = lqr.update(
                 s,
                 target_x=x_ref,
-                target_y=s.y,       # altitude position error = 0; only vy matters
+                target_y=s.y,  # altitude position error = 0; only vy matters
                 target_z=z_ref,
                 target_vx=vx_ref,
                 target_vy=vy_ref,
@@ -260,15 +261,11 @@ class TestLanding3D:
     def test_landing_z_offset(self, z0: float) -> None:
         """Start ±50 m in z → touch down within 2 m, vy > −2 m/s."""
         x_f, z_f, vy_f = self._land(z0=z0)
-        assert abs(x_f) < self.MAX_LANDING_X, (
-            f"z0={z0}: x_touchdown={x_f:.2f} m"
-        )
+        assert abs(x_f) < self.MAX_LANDING_X, f"z0={z0}: x_touchdown={x_f:.2f} m"
         assert abs(z_f) < self.MAX_LANDING_Z, (
             f"z0={z0}: z_touchdown={z_f:.2f} m (limit ±{self.MAX_LANDING_Z} m)"
         )
-        assert vy_f > self.MAX_LANDING_VY, (
-            f"z0={z0}: vy_touchdown={vy_f:.2f} m/s"
-        )
+        assert vy_f > self.MAX_LANDING_VY, f"z0={z0}: vy_touchdown={vy_f:.2f} m/s"
 
     # ── 7 — Combined x-z offset ───────────────────────────────────── #
 
@@ -282,6 +279,4 @@ class TestLanding3D:
         assert abs(z_f) < self.MAX_LANDING_Z, (
             f"(x0,z0)=({offset},{offset}): z_touchdown={z_f:.2f} m"
         )
-        assert vy_f > self.MAX_LANDING_VY, (
-            f"(x0,z0)=({offset},{offset}): vy={vy_f:.2f} m/s"
-        )
+        assert vy_f > self.MAX_LANDING_VY, f"(x0,z0)=({offset},{offset}): vy={vy_f:.2f} m/s"

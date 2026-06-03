@@ -24,19 +24,18 @@ import numpy as np
 import pytest
 
 from physics.rocket3d import (
-    GRAVITY,
     G0,
-    ControlInput3D,
+    GRAVITY,
     Rocket3D,
     RocketParams3D,
     _quat_to_rot,
 )
 from physics.state3d import State3D
 
-
 # ──────────────────────────────────────────────────────────────────── #
 # Helpers                                                               #
 # ──────────────────────────────────────────────────────────────────── #
+
 
 def make_rocket(
     y: float = 100.0,
@@ -69,6 +68,7 @@ def _angular_momentum_world(state: State3D, params: RocketParams3D) -> np.ndarra
 # 1 — 3D free-fall                                                      #
 # ──────────────────────────────────────────────────────────────────── #
 
+
 class TestFreefall3D:
     DT = 1.0 / 1000.0
     T_FINAL = 3.0
@@ -86,9 +86,7 @@ class TestFreefall3D:
         """ay = −g within 0.1 % over the first timestep."""
         hist = self._run()
         ay = (hist[1].vy - hist[0].vy) / self.DT
-        assert abs(ay - (-GRAVITY)) / GRAVITY < 1e-3, (
-            f"ay = {ay:.6f} m/s², expected −{GRAVITY}"
-        )
+        assert abs(ay - (-GRAVITY)) / GRAVITY < 1e-3, f"ay = {ay:.6f} m/s², expected −{GRAVITY}"
 
     def test_no_horizontal_acceleration(self) -> None:
         """Free-fall → ax = az = 0 throughout."""
@@ -119,35 +117,44 @@ class TestFreefall3D:
 # 2 — Quaternion norm preservation                                      #
 # ──────────────────────────────────────────────────────────────────── #
 
+
 class TestQuaternionNorm:
     """
     Under free motion with initial angular velocity, |q| must stay = 1.
     The RK4 step re-normalises after each step; this confirms no drift escapes.
     """
+
     DT = 1.0 / 60.0
-    N_STEPS = 3600   # 60 s
+    N_STEPS = 3600  # 60 s
 
     def test_norm_stays_unity(self) -> None:
         # Tilted rocket with non-zero spin on all axes.
         state = State3D(
             y=500.0,
-            q0=0.9239, q1=0.3827, q2=0.0, q3=0.0,  # ~45° tilt around x
-            omega_x=0.5, omega_y=0.1, omega_z=0.3,
+            q0=0.9239,
+            q1=0.3827,
+            q2=0.0,
+            q3=0.0,  # ~45° tilt around x
+            omega_x=0.5,
+            omega_y=0.1,
+            omega_z=0.3,
             m=500.0,
         )
         rocket = Rocket3D(state, RocketParams3D(dry_mass=100.0))
         for _ in range(self.N_STEPS):
             s = rocket.step(self.DT)
             norm = np.linalg.norm(s.quat)
-            assert abs(norm - 1.0) < 1e-9, f"|q| = {norm:.10f} at step {_+1}"
+            assert abs(norm - 1.0) < 1e-9, f"|q| = {norm:.10f} at step {_ + 1}"
 
 
 # ──────────────────────────────────────────────────────────────────── #
 # 3 — Hover equilibrium                                                 #
 # ──────────────────────────────────────────────────────────────────── #
 
+
 class TestHover3D:
     """T = m·g, upright rocket → vertical acceleration ≈ 0, no drift."""
+
     DT = 1.0 / 1000.0
 
     def test_hover_cancels_gravity(self) -> None:
@@ -182,19 +189,26 @@ class TestHover3D:
 # 4 — Angular momentum conservation                                     #
 # ──────────────────────────────────────────────────────────────────── #
 
+
 class TestAngularMomentum3D:
     """
     Zero thrust and zero gimbal → no external torque →
     angular momentum in the world frame is conserved.
     """
+
     DT = 1.0 / 60.0
-    N_STEPS = 600   # 10 s
+    N_STEPS = 600  # 10 s
 
     def test_angular_momentum_conserved(self) -> None:
         state = State3D(
             y=500.0,
-            q0=1.0, q1=0.0, q2=0.0, q3=0.0,
-            omega_x=0.3, omega_y=0.1, omega_z=0.2,
+            q0=1.0,
+            q1=0.0,
+            q2=0.0,
+            q3=0.0,
+            omega_x=0.3,
+            omega_y=0.1,
+            omega_z=0.2,
             m=500.0,
         )
         params = RocketParams3D(dry_mass=100.0)
@@ -203,7 +217,7 @@ class TestAngularMomentum3D:
         L0 = _angular_momentum_world(rocket.state, params)
 
         for _ in range(self.N_STEPS):
-            rocket.step(self.DT)   # zero thrust, zero gimbal
+            rocket.step(self.DT)  # zero thrust, zero gimbal
 
         L_final = _angular_momentum_world(rocket.state, params)
 
@@ -219,6 +233,7 @@ class TestAngularMomentum3D:
 # 5 — Axial spin stability                                              #
 # ──────────────────────────────────────────────────────────────────── #
 
+
 class TestAxialSpin:
     """
     Rotation purely around the symmetry axis (ω = [0, Ω, 0] body frame),
@@ -230,9 +245,10 @@ class TestAxialSpin:
       ω̇_z = −(It − Ia)·ωx·ωy / It = 0  (ωx = 0)
     → ω is exactly constant.
     """
+
     DT = 1.0 / 60.0
-    N_STEPS = 600   # 10 s
-    OMEGA_Y = 2.0   # rad/s spin around body y (symmetry axis)
+    N_STEPS = 600  # 10 s
+    OMEGA_Y = 2.0  # rad/s spin around body y (symmetry axis)
 
     def test_axial_spin_omega_constant(self) -> None:
         state = State3D(y=500.0, omega_y=self.OMEGA_Y, m=500.0)
@@ -241,7 +257,9 @@ class TestAxialSpin:
         for _ in range(self.N_STEPS):
             rocket.step(self.DT)
         np.testing.assert_allclose(
-            rocket.state.omega, omega0, rtol=1e-5,
+            rocket.state.omega,
+            omega0,
+            rtol=1e-5,
             err_msg="Axial spin should remain constant with no torque",
         )
 
@@ -250,23 +268,25 @@ class TestAxialSpin:
 # 6 — Tsiolkovsky Δv in 3D                                             #
 # ──────────────────────────────────────────────────────────────────── #
 
+
 class TestTsiolkovsky3D:
     """
     Vertical burn (upright, zero gimbal), high T/W to minimise gravity losses.
     Δv_sim  = vy at burnout.
     Δv_theory = Isp · g₀ · ln(m₀ / m_dry)
     """
+
     DT = 1.0 / 1000.0
 
     def _run_burn(
         self,
         m0: float = 1000.0,
         dry_mass: float = 100.0,
-        thrust: float = 981_000.0,   # T/W ≈ 100 → burn ≈ 2.7 s, gravity loss < 0.5 %
+        thrust: float = 981_000.0,  # T/W ≈ 100 → burn ≈ 2.7 s, gravity loss < 0.5 %
         isp: float = 300.0,
     ) -> tuple[float, float]:
         params = RocketParams3D(dry_mass=dry_mass, isp=isp)
-        state = State3D(y=1e6, m=m0)        # very high altitude → gravity negligible
+        state = State3D(y=1e6, m=m0)  # very high altitude → gravity negligible
         rocket = Rocket3D(state, params)
 
         vy_start = rocket.state.vy
@@ -281,8 +301,7 @@ class TestTsiolkovsky3D:
         dv_sim, dv_theory = self._run_burn()
         rel_err = abs(dv_sim - dv_theory) / abs(dv_theory)
         assert rel_err < 0.01, (
-            f"Δv_sim={dv_sim:.2f} m/s, Δv_theory={dv_theory:.2f} m/s, "
-            f"rel_err={rel_err:.3%}"
+            f"Δv_sim={dv_sim:.2f} m/s, Δv_theory={dv_theory:.2f} m/s, rel_err={rel_err:.3%}"
         )
 
     @pytest.mark.parametrize("mass_ratio", [2.0, 5.0, 10.0])
@@ -298,10 +317,12 @@ class TestTsiolkovsky3D:
 # 7 — Dry-mass clamp                                                    #
 # ──────────────────────────────────────────────────────────────────── #
 
+
 class TestDryMassClamp3D:
     """Mass must never drop below dry_mass, even with sustained burn."""
+
     DT = 1.0 / 60.0
-    N_STEPS = 3600   # 60 s — far exceeds propellant lifetime
+    N_STEPS = 3600  # 60 s — far exceeds propellant lifetime
 
     def test_mass_never_below_dry(self) -> None:
         dry = 100.0
@@ -311,5 +332,5 @@ class TestDryMassClamp3D:
         for i in range(self.N_STEPS):
             rocket.step(self.DT, thrust=5000.0)
             assert rocket.state.m >= dry - 1e-9, (
-                f"mass = {rocket.state.m:.6f} kg < dry_mass = {dry} at step {i+1}"
+                f"mass = {rocket.state.m:.6f} kg < dry_mass = {dry} at step {i + 1}"
             )
