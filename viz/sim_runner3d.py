@@ -33,10 +33,10 @@ from physics.state3d import State3D
 
 # ── Simulation constants ──────────────────────────────────────────────── #
 
-DT: float = 1.0 / 60.0          # timestep [s]
-MAX_STEPS: int = 18_000          # 300 s hard cap
-LAMBDA: float = 0.03             # horizontal convergence rate [1/s]
-DEFAULT_MASS: float = 1_000.0    # kg  initial total mass
+DT: float = 1.0 / 60.0  # timestep [s]
+MAX_STEPS: int = 18_000  # 300 s hard cap
+LAMBDA: float = 0.03  # horizontal convergence rate [1/s]
+DEFAULT_MASS: float = 1_000.0  # kg  initial total mass
 DEFAULT_PARAMS = RocketParams3D(
     dry_mass=100.0,
     body_length=20.0,
@@ -49,6 +49,7 @@ DEFAULT_PARAMS = RocketParams3D(
 # ══════════════════════════════════════════════════════════════════════ #
 # Core simulator                                                         #
 # ══════════════════════════════════════════════════════════════════════ #
+
 
 def _state_to_dict(s: State3D, t: float, cmd: ControlInput3D) -> dict[str, Any]:
     """Convert a State3D snapshot + command into a JSON-serialisable dict."""
@@ -142,7 +143,7 @@ def run_simulation(
         cmd = lqr.update(
             s,
             target_x=x_ref,
-            target_y=float(s.y),   # δy = 0 always; vy error drives altitude
+            target_y=float(s.y),  # δy = 0 always; vy error drives altitude
             target_z=z_ref,
             target_vx=vx_ref,
             target_vy=vy_ref,
@@ -165,6 +166,7 @@ def run_simulation(
 # ══════════════════════════════════════════════════════════════════════ #
 # HTML export                                                            #
 # ══════════════════════════════════════════════════════════════════════ #
+
 
 def export_html(
     trajectory: list[dict[str, Any]],
@@ -200,10 +202,7 @@ def export_html(
 
     traj_json = json.dumps(trajectory, separators=(",", ":"))
     # Embed in a <script> block that the viewer reads from window.TRAJECTORY
-    injection = (
-        f"<script>window.TRAJECTORY={traj_json};"
-        f"window.VIZ_MODE='replay';</script>"
-    )
+    injection = f"<script>window.TRAJECTORY={traj_json};window.VIZ_MODE='replay';</script>"
 
     # Insert right before </head>
     if "</head>" in template:
@@ -228,12 +227,18 @@ if __name__ == "__main__":
     parser.add_argument("--x0", type=float, default=50.0, help="Initial x offset [m]")
     parser.add_argument("--z0", type=float, default=0.0, help="Initial z offset [m]")
     parser.add_argument("--y0", type=float, default=1000.0, help="Initial altitude [m]")
+    parser.add_argument(
+        "--record-every",
+        type=int,
+        default=1,
+        help="Save every Nth frame (1=60Hz, 2=30Hz, 3=20Hz). Larger N → smaller file.",
+    )
     parser.add_argument("--out", default="landing3d.html", help="Output HTML path")
     args = parser.parse_args()
 
     print(f"Simulating: x0={args.x0}m  y0={args.y0}m  z0={args.z0}m …")
     t0 = time.perf_counter()
-    traj = run_simulation(x0=args.x0, y0=args.y0, z0=args.z0)
+    traj = run_simulation(x0=args.x0, y0=args.y0, z0=args.z0, record_every=args.record_every)
     elapsed = time.perf_counter() - t0
 
     final = traj[-1]

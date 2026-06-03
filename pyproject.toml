@@ -17,6 +17,7 @@ dependencies = [
     "numpy>=1.26",
     "scipy>=1.12",
     "matplotlib>=3.8",
+    "websockets>=14",
 ]
 
 [project.optional-dependencies]
@@ -38,6 +39,12 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "N", "UP", "B", "NPY"]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Physics/control code uses uppercase math symbols by convention
+# (K = gain matrix, R = rotation, I = inertia, L = angular momentum)
+"physics/*.py" = ["N802", "N806", "E741"]
+"tests/*.py" = ["N802", "N806", "E741"]
 
 [tool.ruff.format]
 quote-style = "double"

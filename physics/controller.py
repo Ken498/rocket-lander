@@ -40,7 +40,6 @@ import numpy as np
 
 from .state import State
 
-
 _GRAVITY = 9.81  # m/s²
 
 
@@ -90,16 +89,12 @@ class PIDController:
         # the error keeps pushing it further in that direction.
         output_pd = self.gains.kp * error + self.gains.kd * derivative
         winding_high = output_pd >= hi and error > 0
-        winding_low  = output_pd <= lo and error < 0
+        winding_low = output_pd <= lo and error < 0
 
         if not winding_high and not winding_low:
             self._integral += error * dt
 
-        output = (
-            self.gains.kp * error
-            + self.gains.ki * self._integral
-            + self.gains.kd * derivative
-        )
+        output = self.gains.kp * error + self.gains.ki * self._integral + self.gains.kd * derivative
 
         self._prev_error = error
         return max(lo, min(hi, output))
@@ -133,13 +128,13 @@ class RocketPID:
         self,
         altitude_gains: PIDGains,
         attitude_gains: PIDGains,
-        max_thrust: float = 30_000.0,    # N
-        max_gimbal: float = 0.3,          # rad (~17 deg)
-        max_tilt: float = 0.08,           # rad — max body tilt for lateral correction
-        kp_x: float = 0.011,              # outer horizontal-position gain
-        kd_x: float = 0.6,               # outer horizontal-velocity damping
+        max_thrust: float = 30_000.0,  # N
+        max_gimbal: float = 0.3,  # rad (~17 deg)
+        max_tilt: float = 0.08,  # rad — max body tilt for lateral correction
+        kp_x: float = 0.011,  # outer horizontal-position gain
+        kd_x: float = 0.6,  # outer horizontal-velocity damping
         descent_rate_gain: float = 0.05,  # (m/s) per metre of altitude
-        min_descent_speed: float = 2.0,   # m/s — final approach speed
+        min_descent_speed: float = 2.0,  # m/s — final approach speed
         max_descent_speed: float = 30.0,  # m/s — max commanded descent speed
     ) -> None:
         self._alt_pid = PIDController(altitude_gains, output_limits=(-10_000.0, 20_000.0))
@@ -174,11 +169,13 @@ class RocketPID:
         # ── Loop 1: altitude / velocity profile ──────────────────────────
         # BUG 2 FIX: use velocity profile instead of raw position error.
         altitude_above_target = state.y - target_altitude
-        target_vy = -float(np.clip(
-            self.descent_rate_gain * altitude_above_target,
-            self.min_descent_speed,
-            self.max_descent_speed,
-        ))
+        target_vy = -float(
+            np.clip(
+                self.descent_rate_gain * altitude_above_target,
+                self.min_descent_speed,
+                self.max_descent_speed,
+            )
+        )
 
         # Gravity feedforward: base thrust cancels gravity.
         # PID only trims velocity error on top of this.
@@ -190,11 +187,13 @@ class RocketPID:
         # BUG 4 FIX: compute target_theta from x position.
         # BUG 3 FIX (partial): only tilt when thrusting; reset during freefall.
         if thrust > 0.0:
-            target_theta = float(np.clip(
-                self.kp_x * state.x + self.kd_x * state.vx,
-                -self.max_tilt,
-                self.max_tilt,
-            ))
+            target_theta = float(
+                np.clip(
+                    self.kp_x * state.x + self.kd_x * state.vx,
+                    -self.max_tilt,
+                    self.max_tilt,
+                )
+            )
         else:
             target_theta = 0.0
             self._att_pid.reset()  # prevent windup during freefall

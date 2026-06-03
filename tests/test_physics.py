@@ -21,13 +21,13 @@ import numpy as np
 import pytest
 
 from physics.controller import PIDGains, RocketPID
-from physics.rocket import GRAVITY, G0, Rocket, RocketParams
+from physics.rocket import G0, GRAVITY, Rocket, RocketParams
 from physics.state import State
-
 
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
+
 
 def make_rocket(
     y: float = 100.0,
@@ -57,10 +57,11 @@ def run(
 # 1 & 2 — free-fall
 # ---------------------------------------------------------------------------
 
+
 class TestFreefall:
-    DT = 1.0 / 1000.0   # 1 ms — tight dt to isolate integrator error
-    T_FINAL = 3.0        # s
-    Y0 = 500.0           # m
+    DT = 1.0 / 1000.0  # 1 ms — tight dt to isolate integrator error
+    T_FINAL = 3.0  # s
+    Y0 = 500.0  # m
 
     def _run(self) -> list[State]:
         rocket = make_rocket(y=self.Y0)
@@ -101,6 +102,7 @@ class TestFreefall:
 # 3 — Tsiolkovsky Δv
 # ---------------------------------------------------------------------------
 
+
 class TestTsiolkovsky:
     """
     Vertical burn (theta=0, gimbal=0) starting from rest.
@@ -135,8 +137,7 @@ class TestTsiolkovsky:
         dv_sim, dv_theory = self._run_burn()
         rel_err = abs(dv_sim - dv_theory) / abs(dv_theory)
         assert rel_err < 0.01, (
-            f"Δv_sim={dv_sim:.2f} m/s, Δv_theory={dv_theory:.2f} m/s, "
-            f"rel_err={rel_err:.3%}"
+            f"Δv_sim={dv_sim:.2f} m/s, Δv_theory={dv_theory:.2f} m/s, rel_err={rel_err:.3%}"
         )
 
     @pytest.mark.parametrize("mass_ratio", [2.0, 5.0, 10.0])
@@ -151,6 +152,7 @@ class TestTsiolkovsky:
 # ---------------------------------------------------------------------------
 # 4 — Hover equilibrium
 # ---------------------------------------------------------------------------
+
 
 class TestHover:
     """T = m·g with gimbal=0 should produce ay ≈ 0."""
@@ -180,11 +182,12 @@ class TestHover:
 # 5 — Angular momentum conservation
 # ---------------------------------------------------------------------------
 
+
 class TestAngularMomentum:
     """gimbal=0, thrust=0 → no torque → ω must remain constant."""
 
     DT = 1.0 / 60.0
-    N_STEPS = 600   # 10 s
+    N_STEPS = 600  # 10 s
 
     def test_omega_constant_no_torque(self) -> None:
         state = State(x=0, y=500, vx=0, vy=0, theta=0.1, omega=0.5, m=500.0)
@@ -198,6 +201,7 @@ class TestAngularMomentum:
 # ---------------------------------------------------------------------------
 # 6 — Dry-mass clamp
 # ---------------------------------------------------------------------------
+
 
 class TestDryMassClamp:
     """Mass must never drop below dry_mass, even with sustained burn."""
@@ -219,6 +223,7 @@ class TestDryMassClamp:
 # 7 — PID landing performance (Week 3 spec)
 # ---------------------------------------------------------------------------
 
+
 class TestPIDLanding:
     """
     End-to-end autopilot test.
@@ -233,9 +238,9 @@ class TestPIDLanding:
     """
 
     DT = 1.0 / 60.0
-    MAX_STEPS = 18_000          # 300 s — generous timeout
-    MAX_LANDING_X = 1.0         # m
-    MAX_LANDING_VY = -2.0       # m/s  (negative = downward; must be > this)
+    MAX_STEPS = 18_000  # 300 s — generous timeout
+    MAX_LANDING_X = 1.0  # m
+    MAX_LANDING_VY = -2.0  # m/s  (negative = downward; must be > this)
 
     # Recommended gains from the RocketPID docstring.
     ALTITUDE_GAINS = PIDGains(kp=500, ki=50, kd=100)

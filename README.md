@@ -3,7 +3,7 @@
 A Falcon 9-style rocket that lands itself, simulated with full 6-DOF rigid-body
 dynamics and a model-predictive control autopilot.
 
-🚧 **Work in progress** — currently in Phase 1 (2D MVP).
+🚧 **Work in progress** — Phase 2: 6-DOF dynamics + LQR autopilot, Three.js viewer.
 
 ## Setup
 
@@ -25,10 +25,22 @@ pytest
 ## Project structure
 
 - `physics/` — equations of motion, integrators, force models
-- `viz/` — Matplotlib visualization (Phase 1), later Three.js
+- `viz/` — Three.js viewer (current), with a 2D Matplotlib animator kept as a Phase 1 milestone
 - `tests/` — unit tests for dynamics and controllers
 - `notebooks/` — validation plots and exploratory analysis
 - `docs/` — physics derivations and design notes
+
+## Try it
+
+```bash
+# Replay export — produces a self-contained landing HTML
+python -m viz.sim_runner3d --x0 50 --z0 30 --record-every 3 --out landing.html
+open landing.html   # or just double-click
+
+# Live mode — physics streams over WebSocket to the browser
+python -m viz.server3d
+# then open http://localhost:8766/viewer3d.html and set window.VIZ_MODE='live'
+```
 
 ## Roadmap
 
