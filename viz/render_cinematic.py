@@ -410,100 +410,19 @@ def build_ground() -> None:
     and 16 warm amber perimeter flood lights.
     """
 
-    # ── 1. Terrain ───────────────────────────────────────────────────────
-    bpy.ops.mesh.primitive_plane_add(size=12000, location=(0, 0, -0.10))
-    terrain = bpy.context.active_object
-    terrain.name = "Terrain"
+    # Assuming you are working with an active object's material
+    mat = bpy.context.active_object.active_material
 
-    mat = _new_material("FloridaTerrain")
+    # Ensure the material is actually set to use nodes
+    mat.use_nodes = True
+
+    # DEFINE 'nodes' before you use it
     nodes = mat.node_tree.nodes
-    links = mat.node_tree.links
 
-    out_mat = nodes.new("ShaderNodeOutputMaterial")
-    bsdf = nodes.new("ShaderNodeBsdfPrincipled")
-
-    tc = nodes.new("ShaderNodeTexCoord")
-    mp = nodes.new("ShaderNodeMapping")
-    mp.inputs["Scale"].default_value = (0.04, 0.04, 0.04)
-    links.new(tc.outputs["Object"], mp.inputs["Vector"])
-
-    ng = nodes.new("ShaderNodeTexNoise")
-    ng.inputs["Scale"].default_value = 6.0
-    ng.inputs["Detail"].default_value = 10.0
-    ng.inputs["Roughness"].default_value = 0.65
-    links.new(mp.outputs["Vector"], ng.inputs["Vector"])
-
-    np1 = nodes.new("ShaderNodeTexNoise")
-    np1.inputs["Scale"].default_value = 1.2
-    np1.inputs["Detail"].default_value = 4.0
-    np1.inputs["Roughness"].default_value = 0.50
-    links.new(mp.outputs["Vector"], np1.inputs["Vector"])
-
-    np2 = nodes.new("ShaderNodeTexNoise")
-    np2.inputs["Scale"].default_value = 0.6
-    np2.inputs["Detail"].default_value = 3.0
-    np2.inputs["Roughness"].default_value = 0.45
-    links.new(mp.outputs["Vector"], np2.inputs["Vector"])
-
-    add_n = nodes.new("ShaderNodeMath")
-    add_n.operation = "ADD"
-    mul_n = nodes.new("ShaderNodeMath")
-    mul_n.operation = "MULTIPLY"
-    mul_n.inputs[1].default_value = 0.5
-    links.new(np1.outputs["Fac"], add_n.inputs[0])
-    links.new(np2.outputs["Fac"], add_n.inputs[1])
-    links.new(add_n.outputs["Value"], mul_n.inputs[0])
-
-    ramp = nodes.new("ShaderNodeValToRGB")
-    cr = ramp.color_ramp
-    cr.color_mode = "RGB"
-    cr.interpolation = "LINEAR"
-    cr.elements[0].position = 0.00
-    cr.elements[0].color = (0.02, 0.06, 0.10, 1.0)
-    cr.elements[1].position = 1.00
-    cr.elements[1].color = (0.62, 0.58, 0.42, 1.0)
-    e1 = cr.elements.new(0.30)
-    e1.color = (0.05, 0.12, 0.14, 1.0)
-    e2 = cr.elements.new(0.38)
-    e2.color = (0.08, 0.18, 0.10, 1.0)
-    e3 = cr.elements.new(0.48)
-    e3.color = (0.10, 0.22, 0.08, 1.0)
-    e4 = cr.elements.new(0.62)
-    e4.color = (0.15, 0.32, 0.08, 1.0)
-    e5 = cr.elements.new(0.78)
-    e5.color = (0.22, 0.28, 0.10, 1.0)
-    e6 = cr.elements.new(0.88)
-    e6.color = (0.32, 0.27, 0.18, 1.0)
-    links.new(mul_n.outputs["Value"], ramp.inputs["Fac"])
-
-    mix_grass = nodes.new("ShaderNodeMixRGB")
-    mix_grass.blend_type = "OVERLAY"
-    mix_grass.inputs["Fac"].default_value = 0.25
-    links.new(ramp.outputs["Color"], mix_grass.inputs["Color1"])
-    links.new(ng.outputs["Color"], mix_grass.inputs["Color2"])
-
-    ramp_r = nodes.new("ShaderNodeValToRGB")
-    cr_r = ramp_r.color_ramp
-    cr_r.elements[0].position = 0.00
-    cr_r.elements[0].color = (0.04, 0.04, 0.04, 1)
-    cr_r.elements[1].position = 1.00
-    cr_r.elements[1].color = (0.95, 0.95, 0.95, 1)
-    cr_r.elements.new(0.35).color = (0.04, 0.04, 0.04, 1)
-    cr_r.elements.new(0.42).color = (0.85, 0.85, 0.85, 1)
-    links.new(mul_n.outputs["Value"], ramp_r.inputs["Fac"])
-
-    bump = nodes.new("ShaderNodeBump")
-    bump.inputs["Strength"].default_value = 0.85
-    bump.inputs["Distance"].default_value = 0.05
-    links.new(mul_n.outputs["Value"], bump.inputs["Height"])
-
-    links.new(mix_grass.outputs["Color"], bsdf.inputs["Base Color"])
-    links.new(ramp_r.outputs["Color"], bsdf.inputs["Roughness"])
-    links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
-    links.new(bsdf.outputs["BSDF"], out_mat.inputs["Surface"])
-    bsdf.inputs["Metallic"].default_value = 0.0
-    bsdf.inputs["Specular IOR Level"].default_value = 0.3
-    terrain.data.materials.append(mat)
+    # Now you can actually add your texture node
+    tex = nodes.new("ShaderNodeTexImage")
+    tex.image = bpy.data.images.load(os.path.join(_SCRIPT_DIR, "assets", "launch_site.jpg"))
+    tex.extension = "EXTEND"
 
     # ── 2. Ocean ─────────────────────────────────────────────────────────
     bpy.ops.mesh.primitive_plane_add(size=8000, location=(0, -3000, -2.0))
